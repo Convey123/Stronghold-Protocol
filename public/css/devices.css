@@ -135,6 +135,22 @@ html:not(.sp-in-match) .toast-host { margin-top: var(--sa-t); }
   .gm.is-collapsed .gm__corner { flex-wrap: nowrap; width: auto; }
 }
 
+/* Short landscape phones (≤ 460 CSS px tall): the board is what the player watches, so the HUD strip and the shop bar
+   give up their extra padding and the shop cards lose a little size — every touch target keeps a pixel floor (the
+   confirm strip stays ≥ 34 px, a card stays ≥ 54 px wide), and the rem scale already fits the design into the screen
+   (css/theme.css). Before this the chrome took 57–59 % of a 390 px tall screen and left the board 42 %. */
+@media (max-height: 460px) {
+  .gtop { padding: .1rem .2rem 0 .18rem; gap: .14rem; }
+  .gm__bonds { top: 1.24rem; }
+  .team { top: 2.2rem; gap: .1rem; }
+  .shopbar { bottom: .08rem; gap: .06rem; }
+  .shopbar__row { padding: .06rem; gap: .06rem; }
+  .shopbar__cards, .shopbar__item { gap: .06rem; }
+  .scard { width: 1.4rem; height: 1.98rem; }
+  .lvcard { height: 2rem; }
+  .gm__corner { bottom: .08rem; }
+}
+
 /* Short landscape phones (≤ 460 CSS px tall, 1rem = 40 px): the lobby's two columns are compressed so the
    创建同盟 button and the join panel stay on screen without scrolling. The detail card's header is shorter (no
    romanised name, a shorter portrait) so the operator's own effect (特质) under it stays in view even in the short card

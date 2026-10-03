@@ -18,6 +18,9 @@
 //     single byte-range requests (206/416, used by <audio>); traversal & dotfile protection; 404 page.
 //   * GET /healthz → JSON status (protocol `version`, release `app`, rooms, matches, sessions, sockets).
 //   * WebSocket (ws) at /ws, maxPayload 64 KB → server/net.js Network → server/lobby.js Lobby.
+//   * SP_WEB=0 (or off/false/no) turns the static site off: the server then answers only /ws and /healthz — which is
+//     everything a packaged client needs (Electron / Android carry the whole client, docs/APP.md) — and it keeps the
+//     host's uplink free for the WebSocket instead of streaming ~300 MB of art to every browser tab (docs/DEPLOY.md §2.5).
 //   * Env: PORT (default 3000), HOST (default 0.0.0.0), TRUST_PROXY ('auto' default: honour CF-Connecting-IP /
 //     X-Real-IP / X-Forwarded-For only from loopback/private peers such as a local cloudflared; '1' always; '0' never).
 //     Prints LAN URLs on boot.
@@ -58,6 +61,36 @@ import { getSimData } from './sim/simdata.js';
 export function getData() { return getSimData() || {}; }
 export function resetData() {}
 `;
+/**
+ * Answer for `/` when the static site is off (SP_WEB=0): the browser version is intentionally not served — a browser
+ * tab would stream the whole art set from this host's uplink and slow every running match down. Players use the
+ * packaged clients (docs/APP.md); they only need `ws://<host>:<port>/ws`.
+ */
+export const APP_ONLY_PAGE = `<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>卫戍协议：盟约 · 服务器</title>
+<style>
+  :root { color-scheme: dark }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0c0f0e; color: #e8efe9;
+         font: 15px/1.7 system-ui, -apple-system, "Noto Sans SC", sans-serif; text-align: center; padding: 24px }
+  h1 { font-size: 18px; margin: 0 0 6px }
+  p { margin: 6px 0; color: #8fa39a; max-width: 30em }
+  code { color: #4ed8af; background: #111614; border: 1px solid #23302b; border-radius: 4px; padding: 1px 5px }
+</style></head>
+<body><div>
+  <h1>卫戍协议：盟约 · 服务器正在运行</h1>
+  <p>本服务器<strong>只提供客户端联机服务</strong>（房间 / 回合 / 校验），不提供网页版——网页版会把服务器的上行带宽吃光，拖慢正在进行的所有对局。</p>
+  <p>请使用 <strong>安卓客户端</strong> 或 <strong>Windows 客户端</strong>：在游戏内「设置 → 服务器地址」填 <code id=u></code> 即可。</p>
+  <p style="font-size:13px;margin-top:14px"><span id=s>·</span></p>
+  <script>
+    document.getElementById('u').textContent = location.origin;
+    fetch('/healthz').then(function (r) { return r.json(); }).then(function (j) {
+      document.getElementById('s').textContent = '在线 ' + (j.humans || 0) + ' 人 · ' + (j.rooms || 0) + ' 个房间 · ' + (j.matches || 0) + ' 局进行中';
+    }).catch(function () {});
+  </script>
+</div></body></html>
+`;
+
 /** Files under server/sim that are never served (Node-only). */
 const SIM_PRIVATE = new Set(['nodedata.js']); // lower-case (compared case-insensitively)
 
@@ -551,6 +584,8 @@ export async function startServer(opts = {}) {
   const host = opts.host ?? process.env.HOST ?? '0.0.0.0';
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new RangeError(`invalid PORT ${port}`);
   const log = opts.log || makeLogger(!!opts.quiet);
+  // 网页版开关：SP_WEB=0 时不再提供静态站点（打包客户端自带素材，只需要 /ws 与 /healthz）
+  const web = opts.web ?? !/^(0|off|false|no)$/i.test(String(process.env.SP_WEB ?? ''));
   const publicDir = opts.publicDir || path.join(ROOT, 'public');
   const dataDir = opts.dataDir || path.join(ROOT, 'data');
   const sharedDir = opts.sharedDir || path.join(ROOT, 'shared');
@@ -570,7 +605,7 @@ export async function startServer(opts = {}) {
   }
   const lobby = new Lobby({ registry, log, MatchClass: opts.MatchClass, getData: () => data, seedFn: opts.seedFn, options: lobbyOptions });
   const network = new Network({ registry, handler: lobby, log, options: netOptions });
-  const serveStatic = createStaticHandler({ publicDir, dataDir, sharedDir, log });
+  const serveStatic = web ? createStaticHandler({ publicDir, dataDir, sharedDir, log }) : null;
   const startedAt = Date.now();
 
   const server = http.createServer((req, res) => {
@@ -595,8 +630,19 @@ export async function startServer(opts = {}) {
     if (parts.rawPath === '/healthz') {
       sendJson(req, res, 200, {
         ok: true, version: PROTOCOL_VERSION, app: APP_VERSION, uptimeSec: Math.round((Date.now() - startedAt) / 1000),
-        sockets: network.connectionCount, sessions: registry.size, ...lobby.stats(),
+        web, sockets: network.connectionCount, sessions: registry.size, ...lobby.stats(),
       });
+      return;
+    }
+    if (!serveStatic) {
+      // 只服务客户端：浏览器打开这个地址看不到游戏（那会把上行带宽吃光并拖慢对局），只有一句说明
+      if (parts.rawPath === '/' || parts.rawPath === '/index.html') {
+        const body = Buffer.from(APP_ONLY_PAGE, 'utf8');
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-length': String(body.length), 'cache-control': 'no-store' });
+        if (req.method === 'HEAD') res.end(); else res.end(body);
+      } else {
+        sendError(req, res, 404, '本服务器只提供客户端联机服务 · client-only server');
+      }
       return;
     }
     await serveStatic(req, res, parts.rawPath, parts.query);

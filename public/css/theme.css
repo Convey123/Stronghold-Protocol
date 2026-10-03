@@ -107,10 +107,15 @@
 
 /* ---- root scale ----------------------------------------------------------------------------- */
 html {
-  font-size: clamp(40px, min(calc(100vw / 19.2), calc(100vh / 10.8)), 240px);
+  /* Design grid: 19.2 × 10.8 rem (1920 × 1080 at 1 rem = 100 px). The scale is the viewport fit ("contain").
+     1 rem floor: the old 40 px was a phone guess and it backfired on short landscape screens — the design is 432 px
+     tall at 40 px, so on a 390–440 px tall phone the chrome kept its desktop size while the board was squeezed into the
+     leftover ~42 %; the floor is now only as large as the chrome needs to stay usable, and the fit formula decides.
+     2 rem ceiling: 4K and ultrawide keep their 1 rem = 100 px design size instead of scaling forever. */
+  font-size: clamp(20px, min(calc(100vw / 19.2), calc(100vh / 10.8)), 240px);
   /* mobile browsers: 100vh is the height with the toolbars hidden — the small viewport (svh; Safari 15.4+, Chrome 108+,
      Firefox 101+) is what is really visible while they show; older browsers keep the line above */
-  font-size: clamp(40px, min(calc(100vw / 19.2), calc(100svh / 10.8)), 240px);
+  font-size: clamp(20px, min(calc(100vw / 19.2), calc(100svh / 10.8)), 240px);
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
   height: 100%;

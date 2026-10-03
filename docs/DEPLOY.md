@@ -174,6 +174,21 @@ server {
 
 https / wss 说明：页面通过 https 打开时客户端自动连接 `wss://同一域名/ws`；http 时用 `ws://`。服务器本身只提供 http，证书由代理 / 隧道负责。代理与服务器在同一台机器或内网时，`TRUST_PROXY=auto` 会信任它的 `X-Forwarded-For` / `X-Real-IP`；代理在公网另一台机器上时设 `TRUST_PROXY=1`（同时确保游戏端口只对代理开放）。
 
+## 2.5 只服务客户端（关掉网页版，推荐给带宽小的服务器）
+
+打包客户端（`docs/APP.md`）自带全部素材，服务器只需要应答 `/ws`（房间 / 回合 / 经济 / 校验）。用 `SP_WEB=0` 关掉静态站点后：
+
+- `GET /` 返回一句说明（提示用客户端、显示当前地址与在线人数），`GET /healthz` 照常返回 JSON；
+- 其余一切路径（客户端代码、`/data/`、`/shared/`、`/sim/`、`/assets/`、`/fonts/`）都是 404 —— 浏览器打不开游戏，也就不会有人用网页版把上行带宽吃光；
+- 对局不受影响：客户端只连 `ws://<host>:<port>/ws`。
+
+```bash
+SP_WEB=0 npm start                      # 临时
+# 或写进服务配置（systemd: Environment=SP_WEB=0）
+```
+
+为什么值得这么做：网页版每位玩家首次进入要下载几十 MB 素材（`public/assets` 约 300 MB），一台 3–5 Mbps 上行的小主机在有几个人的时候就会被拖到卡顿；实测关掉静态站点后，服务器只剩 JSON / WebSocket 流量（4 人对局每回合约 0.25 MB）。
+
 ## 3. Docker
 
 ```bash

@@ -489,6 +489,12 @@
 .set-toggle.is-on { color: var(--mint-400); border-color: var(--mint-700); }
 .set-toggle.is-on i { background: var(--mint-800); }
 .set-toggle.is-on i::after { transform: translateX(.22rem); background: var(--mint-400); }
+/* 服务器地址 (packaged apps only: docs/APP.md) — the client is local, so this points at the game server */
+.set-row--server { grid-template-columns: 3.3rem 1fr auto; }
+.set-input { min-width: 0; height: .38rem; padding: 0 .12rem; background: #0a0d0c; border: 1px solid var(--line-2);
+  color: var(--text-hi); font-family: var(--font-mono, monospace); font-size: .17rem; }
+.set-input:focus { border-color: var(--mint-500); outline: none; }
+.set-note { grid-column: 2 / 4; font-size: .16rem; color: var(--amber-400, var(--mint-400)); }
 .set-seg { grid-column: 2 / 4; justify-self: start; display: flex; border: 1px solid var(--line-2); }
 .set-seg button { min-width: .8rem; height: .38rem; background: #0a0d0c; border: 0; border-right: 1px solid var(--line-2); color: var(--text-lo); font-size: .16rem; }
 .set-seg button:last-child { border-right: 0; }

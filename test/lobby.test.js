@@ -413,6 +413,57 @@ describe('static http server (real repository roots)', () => {
   });
 });
 
+describe('client-only server (SP_WEB=0 / opts.web=false)', () => {
+  let srv;
+  let pool;
+  before(async () => {
+    srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, web: false });
+    pool = clientPool(() => `ws://127.0.0.1:${srv.port}/ws`);
+  });
+  afterEach(async () => { await pool?.closeAll(); });
+  after(async () => { await srv?.close(); });
+
+  test('the browser version is gone: only / and /healthz answer, everything else 404', async () => {
+    const root = await httpReq(srv.port, '/');
+    assert.equal(root.status, 200);
+    assert.equal(root.headers['content-type'], 'text/html; charset=utf-8');
+    const html = root.body.toString();
+    assert.match(html, /只提供客户端联机服务/);
+    assert.ok(!html.includes('/vendor/') && !html.includes('id="app"'), 'never the game client itself');
+    for (const p of ['/index.html']) {
+      const r = await httpReq(srv.port, p);
+      assert.equal(r.status, 200, p);
+    }
+    for (const p of ['/js/net.js', '/data.js', '/data/chess.json', '/shared/protocol.js', '/sim/spec.js', '/fonts/fonts.css', '/assets/ui/x.png', '/dev/game-mock.html', '/nope']) {
+      const r = await httpReq(srv.port, p);
+      assert.equal(r.status, 404, `${p} → ${r.status} (a browser must not be able to pull the client or its art)`);
+    }
+  });
+
+  test('healthz reports the mode, and the WebSocket still works', async () => {
+    const h = await httpReq(srv.port, '/healthz');
+    assert.equal(h.status, 200);
+    const j = JSON.parse(h.body.toString());
+    assert.equal(j.ok, true);
+    assert.equal(j.web, false, 'the mode is visible to monitoring');
+    const c = await pool.player('只运算');
+    assert.ok(c.id, 'hello → welcome');
+    const room = await createRoom(c, 'solo');
+    assert.ok(room.code, 'rooms still work (the app only needs /ws)');
+  });
+
+  test('a WebSocket upgrade elsewhere is still refused', async () => {
+    const status = await new Promise((resolve, reject) => {
+      const req = http.request({ host: '127.0.0.1', port: srv.port, path: '/ws2', headers: { Connection: 'Upgrade', Upgrade: 'websocket' } });
+      req.on('upgrade', () => reject(new Error('upgraded a wrong path')));
+      req.on('response', (res) => { res.resume(); resolve(res.statusCode); });
+      req.on('error', (e) => { if (/hang up|ECONNRESET/.test(e.message)) resolve(404); else reject(e); });
+      req.end();
+    });
+    assert.equal(status, 404, '/ws2 is not a socket path');
+  });
+});
+
 // ---------------------------------------------------------------------------------------------------
 // WebSocket session layer + lobby (default timers)
 // ---------------------------------------------------------------------------------------------------

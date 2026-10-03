@@ -29,6 +29,8 @@
 // Shared modules are imported relatively: in the browser '../../shared/x.js' from /js/ resolves
 // to /shared/x.js (URL resolution clamps at the root); under Node it resolves to <repo>/shared.
 
+import { serverBase, wsUrlFor } from './serverConfig.js';
+
 import { PROTOCOL_VERSION, ERR_TEXT } from '../../shared/constants.js';
 import { validateC2S } from '../../shared/protocol.js';
 
@@ -92,13 +94,16 @@ export function backoffDelay(attempt, rand = Math.random) {
 }
 
 /**
- * WebSocket URL for the current page (`ws(s)://host/ws`).
+ * WebSocket URL of the game server's `/ws`.
+ *
+ * A browser tab is served by the game server itself (same origin); a packaged app (Electron / Android, docs/APP.md)
+ * carries the client locally and names the server through serverConfig.js (`window.__SP_APP__.server`, `?server=`, or
+ * 设定 → 服务器地址).
  * @param {{protocol: string, host: string}} [loc]
  * @returns {string}
  */
 export function defaultWsUrl(loc = globalThis.location) {
-  if (!loc || !loc.host) return 'ws://localhost:3000/ws';
-  return `${loc.protocol === 'https:' ? 'wss' : 'ws'}://${loc.host}/ws`;
+  return wsUrlFor(serverBase(), loc);
 }
 
 const WS_OPEN = 1;

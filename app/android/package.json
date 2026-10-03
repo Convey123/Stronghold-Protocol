@@ -1,0 +1,22 @@
+{
+  "name": "stronghold-protocol-android",
+  "productName": "卫戍协议：盟约",
+  "version": "0.1.0",
+  "private": true,
+  "description": "卫戍协议：盟约 安卓客户端（Capacitor 壳；客户端内置素材，只连服务器打联机）",
+  "license": "GPL-3.0-or-later",
+  "author": "Stronghold Protocol fan project",
+  "scripts": {
+    "client": "node ../../tools/build-client-app.mjs --out www --kind android --server \"${SP_SERVER:-http://localhost:3000}\"",
+    "sync": "cap sync android",
+    "dist:debug": "cd android && ./gradlew assembleDebug",
+    "dist:release": "cd android && ./gradlew assembleRelease"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/core": "^8.5.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.2"
+  }
+}

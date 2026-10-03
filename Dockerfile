@@ -13,7 +13,7 @@
 # Without any art the game still runs with placeholder visuals.
 #
 # Run:  docker run -d --name stronghold -p 3000:3000 --restart unless-stopped stronghold-protocol
-# Env:  PORT (3000), HOST (0.0.0.0), SP_COMBAT (client|server), SP_VERIFY (off|sample|all), TRUST_PROXY (auto|1|0), DEBUG
+# Env:  PORT (3000), HOST (0.0.0.0), SP_COMBAT (client|server), SP_VERIFY (off|sample|all), TRUST_PROXY (auto|1|0), SP_WEB (1|0: 0 = 只应答 /ws 与 /healthz，不服务网页版), DEBUG
 
 ARG NODE_IMAGE=node:22-alpine
 

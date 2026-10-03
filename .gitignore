@@ -37,3 +37,18 @@ desktop.ini
 .idea/
 .vscode/
 .claude/
+
+# Packaged clients (docs/APP.md): the built client bundle, the wrapper dependencies and the installers.
+app/build/
+app/dist/
+app/desktop/node_modules/
+app/android/node_modules/
+app/android/.gradle/
+app/android/app/build/
+app/android/build/
+app/android/www/
+app/android/local.properties
+public/download/
+app/android/keystore/
+app/android/android/app/src/main/assets/public/
+app/desktop/runtime/

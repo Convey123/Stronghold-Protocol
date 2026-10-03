@@ -1,0 +1,13 @@
+{
+  "appId": "org.strongholdprotocol.covenant",
+  "appName": "卫戍协议：盟约",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "http",
+    "cleartext": true
+  },
+  "android": {
+    "allowMixedContent": true,
+    "backgroundColor": "#0c0f0ee6"
+  }
+}

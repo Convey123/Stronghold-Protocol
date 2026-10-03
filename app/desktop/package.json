@@ -1,0 +1,81 @@
+{
+  "name": "stronghold-protocol-desktop",
+  "productName": "Stronghold Protocol",
+  "version": "0.1.0",
+  "private": true,
+  "description": "卫戍协议：盟约 桌面客户端（Electron 壳；客户端内置素材，只连服务器打联机）",
+  "license": "GPL-3.0-or-later",
+  "author": "Stronghold Protocol fan project",
+  "main": "main.js",
+  "scripts": {
+    "start": "npm run runtime && electron .",
+    "client": "node ../../tools/build-client-app.mjs --out ../build/client --kind desktop --server \"${SP_SERVER:-http://localhost:3000}\"",
+    "dist:win": "npm run client && npm run runtime && electron-builder --win --x64",
+    "dist:linux": "npm run client && npm run runtime && electron-builder --linux dir --x64",
+    "runtime": "node build-runtime.mjs"
+  },
+  "devDependencies": {
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "org.strongholdprotocol.covenant",
+    "productName": "StrongholdProtocol",
+    "copyright": "GPL-3.0-or-later · 非官方同人作品，素材版权归鹰角网络 / Yostar",
+    "directories": {
+      "output": "../dist/desktop"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "serve.js",
+      "package.json",
+      "runtime/**",
+      "node_modules/ws/**"
+    ],
+    "extraResources": [
+      {
+        "from": "../build/client",
+        "to": "client"
+      }
+    ],
+    "asar": true,
+    "compression": "normal",
+    "win": {
+      "icon": "icon.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "StrongholdProtocol-${version}-win-x64-portable.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "卫戍协议：盟约",
+      "artifactName": "StrongholdProtocol-${version}-win-x64-Setup.${ext}"
+    },
+    "linux": {
+      "icon": "icon.png",
+      "target": [
+        "dir"
+      ]
+    }
+  },
+  "dependencies": {
+    "ws": "^8.22.0"
+  }
+}
