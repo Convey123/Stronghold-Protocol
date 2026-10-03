@@ -17,6 +17,8 @@ import { net, identity } from '../net.js';
 import { store, useStore, shallowEqual } from '../store.js';
 import { data, useData } from '../data.js';
 import { FullscreenButton, detectFeatures } from '../ui/device.js';
+import { SettingsModal } from '../ui/settings.js';
+import { appInfo, displayServer, offlineMode } from '../serverConfig.js';
 
 // Same character classes as server/net.js sanitizeName (control, zero-width, bidi, BOM), so a name
 // the client accepts is never rejected by the server's hello validation.
@@ -188,6 +190,7 @@ export function TitleScreen() {
   const backdrop = findUiAsset(assets, BACKDROP_KEYS);
   const ridges = findUiAsset(assets, RIDGE_KEYS);
   // Track load/fail per URL (not as booleans reset in effects: an image can load before an effect runs).
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [bgLoadedUrl, setBgLoadedUrl] = useState(null);
   const [ridgesLoadedUrl, setRidgesLoadedUrl] = useState(null);
   const [ridgesFailedUrl, setRidgesFailedUrl] = useState(null);
@@ -208,6 +211,9 @@ export function TitleScreen() {
 
   // touch screens: no autofocus (it would pop the on-screen keyboard over a landscape phone's whole view)
   const touchUi = useMemo(() => detectFeatures().coarse, []);
+  // 左下角设置入口：显示当前模式（离线游玩 / 连的哪台服务器）
+  const modeLabel = offlineMode() ? '离线游玩' : (appInfo() && displayServer() ? displayServer().replace(/^https?:\/\//, '') : '');
+
   return html`<div class="screen title-screen">
     <div class=${`title-bg${bgLoaded ? ' has-art' : ''}${ridgesLoaded ? ' has-ridges' : ''}`} aria-hidden="true">
       ${backdrop ? html`<img class="title-bg__art" src=${backdrop} alt="" draggable=${false}
@@ -264,8 +270,17 @@ export function TitleScreen() {
     </main>
 
     <footer class="title-foot">
-      <span>非官方同人复刻 · 游戏素材版权归 上海鹰角网络 / Yostar 所有</span>
-      <${MicroLabel}>v${APP_VERSION} · WEB SIMULATION<//>
+      <div class="title-foot__left">
+        <button type="button" class="title-set" title="设置：音量 / 画面质量 / 服务器地址 / 离线游玩"
+          onClick=${() => setSettingsOpen(true)}>
+          <${Icon} name="gear" /><span>设置</span>
+          ${modeLabel ? html`<span class="title-set__mode">${modeLabel}</span>` : null}
+        </button>
+      </div>
+      <span class="title-foot__legal">非官方同人复刻 · 游戏素材版权归 上海鹰角网络 / Yostar 所有</span>
+      <${MicroLabel}>v${APP_VERSION} · ${offlineMode() ? 'OFFLINE' : appInfo() ? 'CLIENT' : 'WEB'} SIMULATION<//>
     </footer>
+
+    <${SettingsModal} open=${settingsOpen} onClose=${() => setSettingsOpen(false)} />
   </div>`;
 }

@@ -1458,6 +1458,41 @@ Two public GitHub issues after 0.1.0, both client-only. Normative lines rewritte
 - Tests: `test/sim/feedback1-tank-triggers.test.js` (the data, kit = data, the real battle for the six and for every other MANUAL 重装 record), `test/data.test.js`, `kits_t1t2` / `kits_alt_t1` (PR #12's), `kits_alt_t2` (灰毫 S2), `kits_t5` / `kits_alt_t5` (号角), `test/docs-consistency.test.js`.
 - Extended 2026-10-04: 余 S2 (SKILL_RANGE on its x-1, §22.10); 14 records deviate now.
 
+
+### 21.30 分辨率自适应 (user report, 2026-10-03) — `public/css/theme.css` (root scale), `public/css/devices.css` (short screens), `app/android/android` (`AndroidManifest.xml` 横屏, `res/values/styles.xml` 全屏 + cutout)
+
+**What the user saw:** "安卓版可以运行，但是没有适配不同机型的分辨率". The APK ran, but the layout did not adapt to the phone it ran on.
+
+**What was actually wrong** (measured with the packaged Electron shell + the CDP protocol against `public/dev/game-mock.html`, device metrics per phone):
+
+| 机型 | rem | 棋盘 | 棋盘占屏高 | 底盘占屏高 | 越界 |
+|---|---|---|---|---|---|
+| iPhone 14 844×390 | 40 px（地板） | 286×172 | 0.44 | 0.57 | 0 |
+| Pixel 7 915×412 | 40 px | 330×198 | 0.48 | 0.54 | 0 |
+| SE 667×375 | 40 px | 264×158 | 0.42 | **0.59** | 0 |
+| iPad 4:3 1024×768 | 53.3 px | 583×350 | 0.46 | 0.38 | 0 |
+| 1920×1080 | 100 px | 913×548 | 0.51 | 0.51 | 0 |
+
+Nothing was *clipped* (the HUD and the shop bar are pinned to the viewport, the board takes what is left), but on a 375–440 px tall phone the old `clamp(40px, …)` floor kept the chrome at desktop size: the shop bar alone was 142 px (36 % of the height) and the board was left with 42–48 % of it. The 40 px floor was a phone guess — at 40 px the 10.8 rem design is 432 px tall, i.e. taller than the screen it was drawn on.
+
+**Fix.** (1) `theme.css`: the rem floor drops to 20 px, so the fit formula decides (`min(100vw / 19.2, 100svh / 10.8)`, ceiling 240 px unchanged) — the design now always fits the screen it is on. (2) `devices.css`: on short landscape screens (≤ 460 px tall) the HUD strip and the shop bar give up their extra padding and the shop cards lose ~12 % of their size, while every touch target keeps its pixel floor (`.toolbtn ≥ 30 px`, the confirm strip ≥ 34 px, a card ≥ 54 px wide). (3) Android: `screenOrientation="sensorLandscape"` (the layout is landscape-only; a phone with auto-rotate off now still opens in landscape instead of a clipped portrait view) and the app draws edge-to-edge (`windowFullscreen` + cutout `shortEdges`) — the 24–48 px status bar goes to the board, and the safe-area rules that were already in `devices.css` (`--sa-*`, index.html's `viewport-fit=cover`) finally take effect.
+
+**After** (same harness): iPhone 14 board 330×198 (was 286×172, +33 % area), board share 0.44 → **0.51**, chrome 0.57 → **0.48**; SE 0.42 → 0.49 with chrome 0.59 → 0.47; the 800×360 (1080p phone at DPR 3) case now fits exactly (rem 33.3, board 297×178); tablets and 1920×1080 are untouched (their rem was already fit-driven); no device reports an overflowing element.
+
+**Canvas.** Verified through the same harness with software GL (`--enable-unsafe-swiftshader`): `render/app.js` sizes the Pixi canvas to exactly the viewport at 390×844, 844×390 and 1024×768, with the backing store at `min(devicePixelRatio, 2)` (780×1688 for a DPR-3 phone) — the DPR cap per quality setting was already in place. `ResizeObserver` + the rem formula cover rotation and a resized window; the portrait case is covered by the existing `.rotate-hint` (its CSS and `sp-rotatable` gate were already written — the markup lives in index.html; on a touch device in portrait it is shown, and the Android app no longer reaches that state).
+
+### 21.31 登录页设置入口 + PC 端离线游玩 (user request, 2026-10-03) — `ui/screens/title.js` (`.title-set`), `ui/settings.js` (`ModeRow`), `js/serverConfig.js` (`localServer` / `offlineMode` / `setOfflineMode`), `app/desktop/` (`preload.js`, `build-runtime.mjs`, `main.js` 内置服务器), `tools/build-client-app.mjs` (`--out` 解析)
+
+**用户反馈**：「现在的 PC 端没有地方可以添加服务器连接地址，在登录页面左下角添加一个设置，用来添加登录服务器地址，或者离线游玩」。打包客户端里服务器地址只在**对局内**的设置面板里能改，而地址错了根本进不了对局——这是个死结。
+
+**做法。**（1）标题页左下角加「设置」按钮（`.title-set`，显示当前模式：`离线游玩` 或服务器地址），复用同一个 `SettingsModal`；弹窗里加「游玩方式 MODE」二选一：**联机**（用配置的地址）/ **离线游玩**（PC 端专属，切换后重载），服务器地址行只在联机时出现。
+
+（2）**离线游玩 = 外壳自己跑一份游戏服务器**：`app/desktop/build-runtime.mjs` 把 `server/` + `shared/` + `data/` 装配成 `app/desktop/runtime/`（配一个 `{"type":"module"}` 的 package.json，好让 CommonJS 的 Electron 主进程 `import()` 它），主进程启动时 `startServer({ port: 0, host: '127.0.0.1', web: false })`（SP_WEB=0，只算 `/ws`），preload 用同步 IPC 把端口发布成 `window.__SP_LOCAL__`，`serverConfig.js` 在 `sp.offline` 为真时优先用它。于是**单人 + AI 队友完整可玩且不出网**——战斗本来就在浏览器里模拟（§14），房间 / 回合 / 经济本来就在 Node 里算，只是把那个 Node 搬到客户端进程里。浏览器与安卓端没有 Node 运行时，`offlineAvailable()` 为假，这一项不显示。
+
+**实测**（同一份壳的 Linux 版 + CDP 真实点击）：左下角入口 ✓ → 模式与地址两行 ✓ → 切离线后 `serverBase()` = 本机端口 ✓ → 填代号点开始 → 会话 online → `room.create` = `ok`（房号 `YHTG`）→ 进入房间页 ✓。
+
+**顺带修掉一个工具 bug**：`tools/build-client-app.mjs` 的 `--out` 按仓库根解析，而 `npm run client` 在 `app/desktop` 下执行，于是包被写到 `/home/ubuntu/harness/build/client`、打包用的仍是旧包（Windows 产物当时是"碰巧"对的）。现在 `--out` 按调用方 cwd 解析。
+
 ## 22. GitHub issues after 0.1.1 (v0.1.2)
 
 Public GitHub issues filed after the 0.1.1 release (2026-10-03), each triaged against 0.1.1 first; the real ones were fixed for 0.1.2 in fix branches WA–WL, each independently reviewed before it was merged into `feedback2`. Where each is handled: #25 back-facing operators keep their attack pose when knocked out → §22.1; #51 突袭's idle redeploy → §22.2; #33 items 1–2 阿戈尔's devour and 乌尔比安 S3 → §22.3; #33 item 6 活性源石, with the 沼泽 and 深水区 terrain → §22.4; #42 emotes and guide pages without a local client, and the English title (#38) → §22.5; #32 item 4 钩索师 / 推击手 on 高台 → §22.6; #52 史尔特尔's 余烬 → §22.7; #43 an enemy's 隐匿 after a block, and the 深池逐火 ember window → §22.8; #32 item 7 荒芜拉普兰德 S3's drones → §22.9; #32 item 1 余 S2 → §22.10; #44 归溟幽灵鲨's 替身 → §22.11; #32 item 6 enemy splash against a 隐匿 operator → §22.12; #35 / #16 (PR #48) 要塞 against air units and 莫斯提马's slow icon → §22.13; #58 / #60 / #64 follow in §22.14–§22.16. Decisions of the owner, 2026-10-04: 荒芜拉普兰德's drones measure the distance to an enemy's position, a huge enemy's centre (§22.9); 余 S2 casts with an enemy on its x-1 — a deliberate deviation from the official TAKE_DAMAGE row, added to §21.29's six (§22.10); 乌尔比安 keeps the devour gains through his 【移动】 — the deviation stays (§22.3).

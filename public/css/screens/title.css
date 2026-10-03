@@ -251,3 +251,17 @@
   font-size: .13rem;
   color: var(--text-dim);
 }
+
+/* 左下角的设置入口（标题页）：音量 / 画质 / 服务器地址 / 离线游玩 —— 打包客户端里服务器地址只在这里能改，
+   所以它必须在登录页就能进 */
+.title-foot__left { display: flex; align-items: center; gap: .12rem; }
+.title-set {
+  display: inline-flex; align-items: center; gap: .08rem; height: max(.3rem, 26px); padding: 0 .14rem;
+  background: rgba(8, 11, 10, .7); border: 1px solid var(--line-2); color: var(--text-md);
+  font-size: .15rem; font-family: inherit; cursor: pointer; transition: color var(--t-fast), border-color var(--t-fast);
+}
+.title-set:hover { color: var(--text-hi); border-color: var(--mint-700); }
+.title-set .icon { width: .16rem; height: .16rem; color: var(--mint-500); }
+.title-set__mode { color: var(--mint-400); font-family: var(--font-num); letter-spacing: .02em; }
+.title-foot__legal { text-align: center; }
+@media (max-width: 767px) { .title-foot__legal { display: none; } }
