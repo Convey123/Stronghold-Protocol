@@ -268,3 +268,69 @@ export function resolveSpec(spec, bank) {
   if (spec?.bank) return bank(spec.bank);
   return [];
 }
+
+// ---- operator battle voice (excel/charword_table.json) -------------------------------------------------
+//
+// Every playable operator has official battle lines (行动出发 / 行动开始 / 选中干员 / 部署 / 作战中 / 编入队伍 /
+// 任命队长 / 结算 / 干员报到) in `voice_cn/<charId>/cn_<n>.mp3` — JP: `voice/`, EN: `voice_en/`, KR: `voice_kr/`,
+// the same file names in every dump, only the folder differs. charword_table.json's `placeType` says when the game
+// plays each line; its `voiceAsset` is the path under the dump.
+
+/** Voice dump folder per language (under sound_beta_2). */
+export const VOICE_DIRS = Object.freeze({ cn: 'voice_cn', jp: 'voice', en: 'voice_en', kr: 'voice_kr' });
+
+/** Official `placeType` → the manifest's voice slot (public/js/audio.js VOICE_PRIORITY / VOICE_COOLDOWN_MS). */
+export const VOICE_SLOTS = Object.freeze({
+  BATTLE_START: 'start',            // 行动出发: 开战
+  BATTLE_FACE_ENEMY: 'faceEnemy',   // 行动开始: 首次接敌
+  BATTLE_SELECT: 'select',          // 选中干员1/2
+  BATTLE_PLACE: 'place',            // 部署1/2
+  BATTLE_SKILL_1: 'skill1',         // 作战中1-4: the equipped skill's own slot
+  BATTLE_SKILL_2: 'skill2',
+  BATTLE_SKILL_3: 'skill3',
+  BATTLE_SKILL_4: 'skill4',
+  SQUAD: 'squad',                   // 编入队伍
+  SQUAD_FIRST: 'squadFirst',        // 任命队长
+  FOUR_STAR: 'resultFour',          // 完成高难行动
+  THREE_STAR: 'resultThree',        // 3星结束行动 (完美作战)
+  TWO_STAR: 'resultTwo',            // 非3星结束行动
+  LOSE: 'resultLose',               // 行动失败
+  GACHA: 'gacha',                   // 干员报到
+});
+
+/**
+ * Index charword_table.json into per-character voice slots, in voiceIndex order (one slot may have several lines).
+ * Only the base word key (`wordKey === charId`) is used: the dump has no folder for a skin variant's word key
+ * (`char_x_ita`, `char_x_epoque#28`, …) — those files simply do not exist upstream.
+ * @param {any} charword parsed excel/charword_table.json
+ * @param {string} [lang] voiceId prefix — the zh_CN table carries the `CN_*` lines; the other dubs share the numbering
+ * @returns {Map<string, Record<string, string[]>>} charId → slot → voiceAsset ('char_263_skadi/CN_023')
+ */
+export function indexVoice(charword, lang = 'CN') {
+  const out = new Map();
+  const words = charword?.charWords;
+  if (!words || typeof words !== 'object') return out;
+  /** @type {Map<string, Map<string, Map<string, {index:number, asset:string}>>>} */
+  const seen = new Map();
+  for (const e of Object.values(words)) {
+    if (!e || typeof e !== 'object') continue;
+    const charId = e.charId, slot = VOICE_SLOTS[e.placeType], vid = e.voiceId;
+    if (!charId || !slot || typeof vid !== 'string' || !vid.startsWith(`${lang}_`)) continue;
+    if (e.wordKey !== charId) continue;
+    if (typeof e.voiceAsset !== 'string' || !e.voiceAsset) continue;
+    if (!seen.has(charId)) seen.set(charId, new Map());
+    const slots = seen.get(charId);
+    if (!slots.has(slot)) slots.set(slot, new Map());
+    // the same line can be listed twice (an operator's 升变 / alt records): keep its lowest voiceIndex, once
+    const m = slots.get(slot);
+    const index = Number.isFinite(e.voiceIndex) ? e.voiceIndex : 0;
+    const prev = m.get(vid);
+    if (!prev || index < prev.index) m.set(vid, { index, asset: e.voiceAsset });
+  }
+  for (const [charId, slots] of seen) {
+    const rec = {};
+    for (const [slot, m] of slots) rec[slot] = [...m.values()].sort((a, b) => a.index - b.index).map((x) => x.asset);
+    out.set(charId, rec);
+  }
+  return out;
+}
