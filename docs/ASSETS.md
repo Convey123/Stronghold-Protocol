@@ -48,7 +48,7 @@ How downloads are fetched:
 - A manifest entry with fallbacks (for example an enemy icon that falls back to its base enemy's icon) only moves on to the next alternative after a **definitive 404**. When the primary fails transiently (network error, 5xx or an invalid payload after all retries), no fallback is fetched. The path is listed under `downloadErrors` in the report, and the next run retries the primary.
 - A skeleton that fails to parse is deleted and removed from the ledger, so the next online run downloads it again.
 
-The first run downloads about **269 MiB in about 4,000 files** (it took 134 s on a ~3 MB/s link before the 55 emote and 玩法说明 files, 21.3 MiB, were added). A re-run takes about 1 s.
+The first run downloads about **328 MiB in about 6,050 files** (it took 134 s on a ~3 MB/s link before the 55 emote and 玩法说明 files, 21.3 MiB, and the 2,040 干员战斗语音 files, 58.5 MiB, were added). A re-run takes about 1 s.
 
 Outputs:
 - `data/assets.json`: the manifest (committed).
@@ -86,6 +86,7 @@ The research JSONs in `docs/research/` (03, 05, 07) define **which** ids are nee
 | Enemy Spine that no dump carries (灼热源石虫 / 炽焰源石虫) | the local client only (`tools/local-extract/extract.py ENEMY_SPINES`, optional); never downloaded and never required: an overlay of the web alias (`enemies[id].spineLocal`) | `local/spine/enemy/{enemyId}/{stem}.*` (listed in `data/local-assets.json`) |
 | BGM | AA2 `voice` branch `audio/sound_beta_2/music/**` (大厅/休整期 `act1autochess`, 开战 `act13side/m_bat_kazimierz2_{1,2}` — 骑士之日 / 无畏者; the 开战 track follows the round: `_2` 无畏者 rounds 1–7, `_1` 骑士之日 from round 8) | `audio/bgm/{file}.mp3` |
 | SFX (UI, battle, per unit) | AA2 `voice` `audio/sound_beta_2/**`, mapped from `audio_data.json` banks | `audio/sfx/{same sub-path}.mp3` |
+| 干员战斗语音 | AA2 `voice` `audio/sound_beta_2/voice_cn/{charId}/cn_nn.mp3` — the lines `charword_table.json` lists (`placeType` = when the game plays one, `voiceAsset` = the path); `--voice-lang=jp|en|kr` takes the same file names from `voice/`, `voice_en/`, `voice_kr/` | `audio/voice/{lang}/{charId}/{cn_nn}.mp3` |
 | Fonts: Bender Regular and Light, Novecento Wide | TimWangZi/The-font-of-Arknights | `public/fonts/*.{otf,ttf,woff2}`, `public/fonts/fonts.css` |
 
 The `stem` of a Spine model is the upstream file name. Two examples: `char_107_liskam` has the stem `char_107_liskarm`, and `enemy_9032_aclionk` uses `enemy_1559_vtlionk`. The skel and atlas of a model always share one stem. pixi-spine locates the atlas by swapping the extension, so this matters.
@@ -136,7 +137,7 @@ All paths are URL paths relative to the site root, for example `/assets/char/ava
   hash: 'a1b2c3d4e5f6',             // content hash (cache busting)
   generator: 'tools/fetch-assets.mjs',
   stats: { files, bytes, chars, charsWithBack, enemies, enemiesWithSpine, tokens, tokensWithSpine,
-           spineModels, bonds, items, bands, skills, ui, sfxUnits },
+           spineModels, bonds, items, bands, skills, ui, sfxUnits, voiceChars },
   chars:   { [charId]: { avatar, avatarE2?, portrait, portraitE2?, spine: { front: Spine, back?: Spine } } },
   enemies: { [enemyId]: { icon, spine?: Spine, spineAliasOf?: enemyId,
                           spineLocal?: { group, skel, atlas, textures, …Spine } } },
@@ -161,6 +162,12 @@ All paths are URL paths relative to the site root, for example `/assets/char/ava
              // `bgmEvent = corrosion` (卡西米尔 act13d5d0), so the rescue phase does not reuse the 作战's track
              // (audio.js bgmKeyFor 'unite', falling back to `bgm.combat` for a manifest that lacks it)
     bossBgm: { [bossId]: { intro?, loop } },                   // per-boss track of its R14/R15 level
+    voice:   { [charId]: { start, faceEnemy, select, place, skill1…skill4, squad, squadFirst,
+                           resultFour, resultThree, resultTwo, resultLose, gacha } },
+                           // 干员战斗语音: an operator's official battle lines (charword_table.json placeType → slot,
+                           // tools/assets/audio.mjs VOICE_SLOTS); a slot with several lines is an array and the client
+                           // draws one (public/js/audio.js voice). Only the battle slots play (DESIGN §21.30) —
+                           // 部署 / 编入队伍 / 任命队长 / 干员报到 are carried for the data's sake
     sfx: {
       ui:     { click, back, confirm, tab, pick, drop, error, buy, sell, income, refresh, freeze, levelup,
                 merge, equip, itemMerge, bondUp, artPlace, ready, timer, draft, yourTurn, yourTurnCircle,
