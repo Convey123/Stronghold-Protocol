@@ -5,8 +5,8 @@
 //   public/fonts/**    Bender / Novecento (.otf/.ttf + .woff2) and fonts.css
 //   data/assets.json   manifest used by the client (schema: docs/ASSETS.md)
 //
-// Enemy models no dump carries get another enemy's model (ASSETS.md "Enemy
-// aliases"); the official ones the local client has (tools/local-extract/
+// Enemy models no other dump carries come from the mobile build (PRTS, ASSETS.md
+// "Enemy aliases"); the official ones the local client has (tools/local-extract/
 // extract.py ENEMY_SPINES, optional) are added as `spineLocal` from the
 // committed tools/assets/local-enemy-spines.json — never from the disk, so the
 // manifest is the same with or without the extraction. --local-spines rewrites
@@ -14,8 +14,8 @@
 //
 // Idempotent: existing files with the right size are skipped, so re-running is
 // cheap. Downloads use ~16 parallel connections, 3 retries per source and a
-// jsDelivr mirror fallback. Spine atlases get `size:` (and `pma: true` for
-// enemies); every skeleton is parsed to resolve animation roles.
+// jsDelivr mirror fallback. Spine atlases get `size:` (and `pma: true` for the
+// premultiplied enemies); every skeleton is parsed to resolve animation roles.
 //
 // The committed data/assets.json never shrinks by accident: an entry whose files
 // are missing here is left out of a rebuilt manifest, so a run on a machine where

@@ -83,7 +83,8 @@ The research JSONs in `docs/research/` (03, 05, 07) define **which** ids are nee
 | Operator battle Spine (Front, Back) | fexli/ArknightsResource `spine/{id}/{id}/{Front,Back}/` | `spine/op/{charId}/{front,back}/{stem}.{skel,atlas,png}` |
 | Token Spine | fexli: the default model, or else the first skin variant (`spine/{tokenId}/{variant}/Spine/`) | `spine/token/{tokenId}/{stem}.*` |
 | Enemy Spine (PC build, premultiplied alpha) | isHarryh/Ark-Models `models_enemies/{key}/`, file names from `models_data.json` | `spine/enemy/{enemyId}/{stem}.*` |
-| Enemy Spine that no dump carries (灼热源石虫 / 炽焰源石虫) | the local client only (`tools/local-extract/extract.py ENEMY_SPINES`, optional); never downloaded and never required: an overlay of the web alias (`enemies[id].spineLocal`) | `local/spine/enemy/{enemyId}/{stem}.*` (listed in `data/local-assets.json`) |
+| Enemy Spine (mobile build, straight alpha) | PRTS `enemy_spine/{enemyId}/{enemyId}.{skel,atlas,png}` — only the enemies Ark-Models registers with an empty `assetList` (`plan.mjs ENEMY_SPINE_MOBILE`: 灼热源石虫 / 炽焰源石虫) | `spine/enemy/{enemyId}/{stem}.*` with `pma: false` |
+| The same enemy models, extracted from the local client | the local client only (`tools/local-extract/extract.py ENEMY_SPINES`, optional); never downloaded and never required: an overlay of the web model (`enemies[id].spineLocal`) | `local/spine/enemy/{enemyId}/{stem}.*` (listed in `data/local-assets.json`) |
 | BGM | AA2 `voice` branch `audio/sound_beta_2/music/**` | `audio/bgm/{file}.mp3` |
 | SFX (UI, battle, per unit) | AA2 `voice` `audio/sound_beta_2/**`, mapped from `audio_data.json` banks | `audio/sfx/{same sub-path}.mp3` |
 | Fonts: Bender Regular and Light, Novecento Wide | TimWangZi/The-font-of-Arknights | `public/fonts/*.{otf,ttf,woff2}`, `public/fonts/fonts.css` |
@@ -115,6 +116,7 @@ The `stem` of a Spine model is the upstream file name. Two examples: `char_107_l
 - **Atlases** (research 07 §5.3):
   - Insert `size: W,H` right after each page name. fexli atlases omit it; the value is read from the PNG header. An existing size that disagrees with the PNG is corrected.
   - Ark-Models enemy atlases get `pma: true`, because their textures are premultiplied. pixi-spine reads this and sets `ALPHA_MODES.PMA`.
+  - The mobile-build enemy atlases of `plan.mjs ENEMY_SPINE_MOBILE` (PRTS) keep their straight alpha: no `pma` line is added, the manifest entry says `pma: false` and the atlas is only sized.
   - Page names are sanitized to safe file names.
   - All of this is idempotent.
 - **Skeletons:** every `.skel` (Spine 3.8.99 binary) is parsed in Node with `@pixi-spine/runtime-3.8`, the parser the client ships.
@@ -180,7 +182,8 @@ All paths are URL paths relative to the site root, for example `/assets/char/ava
 ```js
 {
   skel, atlas, textures: [url],       // load with PIXI.Assets.load(skel); atlas/png sit next to it
-  pma: boolean,                       // true for enemies (atlas already carries `pma: true`)
+  pma: boolean,                       // premultiplied pages: true for the Ark-Models enemies and the local extraction,
+                                      // false for the mobile-build models of `plan.mjs ENEMY_SPINE_MOBILE`
   anims: Roles,                       // resolved roles, below
   animations: { [name]: seconds },    // every animation with its duration
   events: [name],                     // e.g. ['OnAttack', 'OnStart']
@@ -256,31 +259,41 @@ Other renderer rules from research 07 §5.4–5.5:
 - **Choosing the model:** Front when the unit faces right or down; Front mirrored when facing left; Back when facing up — while it stands: a dead or knocked-out operator falls and lies with the Front model unless its Back skeleton has a Die clip of its own (131 of the 135 have none; DESIGN §22.1, GitHub issue #25).
 - **Attack speed:** set the attack `timeScale` to `duration / attackInterval`.
 - **Model size:** every skeleton is drawn at one `UNIT.modelScale` (render/style.js, 320 skeleton units per tile), which stands for the official standard. The official client also scales each enemy model in its battle prefab: the Graphic / FaceSwitcher / Spine transforms multiply to 0.27 for most enemies and for the operators' battle skins, but not for all of them. For example, 威龙 is 0.16, 妖怪 0.20 and 青铜镜 0.6. The skeletons themselves carry no such scale, because every enemy SkeletonDataAsset uses 0.01. So an enemy is drawn × data/enemies.json `modelScale` (its prefab's product ÷ 0.27, see docs/DATA.md; user playtest #6: 威龙 used to be drawn 1.35× a 妖怪 instead of 1.08×), and its HP bar sits on that model: at its setup-pose bounds' height × the same factors, or, for a skeleton without bounds, at the chibi headroom × `modelScale` (bosses 2.2 tiles). `tools/local-extract/enemy_scales.py` reads the products from a local client, and `tools/build-data.mjs MODEL_SCALES` keeps them.
-- **Enemy aliases:** `enemies[id].spineAliasOf` means the model belongs to another enemy. Two cases:
-  - `_2` variants whose official prefab is the base one (鸭爵, 高普尼克, 流泪小子, 圆仔, 假想敌：胄, 假想敌：铳): the base model, as in the game.
-  - an enemy whose own model no dump carries: 灼热源石虫 / 炽焰源石虫 (`enemy_1305_mhslim` / `_2`) use the plain 源石虫 on
-    the web (`plan.mjs ENEMY_SPINE_ALIAS`). Their official skeletons only exist in the client's enemy art bundles
-    (`refs/arts/enm_art_*.ab`), so they are an optional **overlay**, `enemies[id].spineLocal` = `{ group, skel, atlas,
-    textures, pma, anims, animations, events, hits, bounds }` (file names in the `data/local-assets.json` group
-    `spine/enemy/{enemyId}`; the rest as a `spine` entry):
-    - `tools/local-extract/extract.py` writes the model to `public/assets/local/spine/enemy/{enemyId}/` (page textures
-      with their `[alpha]` texture merged in: premultiplied RGB + A like Ark-Models; the atlas gets `size:` and
-      `pma: true`) and lists its files in `data/local-assets.json`.
-    - The metadata comes from the committed `tools/assets/local-enemy-spines.json` (`fetch-assets --local-spines`
-      parses the extracted models into it), never from the disk: `data/assets.json` is byte-identical with or without
-      the extraction, it has no `/assets/local/` URL, and setup / doctor / the manifest tests never miss these files.
-    - The client (`assets.js spineEntry`, with `assets.local()`, which `createFieldView` awaits with the manifest) draws
-      the official model when the local manifest lists every file of it; otherwise, or when it fails to load
-      (`UnitView`: the entry's `fallback`), the web alias, tinted toward the slug's own lava colours
-      (`render/units.js ALIAS_TINT`: 灼热 orange, 炽焰 red-orange; research 07 §5.6 "a hue shift", [ASSUMED] look) so a
-      source install without the extraction still tells them from the plain 源石虫. A release bundle carries the
-      models only when it is zipped from a checkout where the extraction ran with the `spine/enemy` job (an extraction
-      made with 0.1.0 lacks it: `node tools/setup.mjs --local` again, then check that `data/local-assets.json` lists
-      `spine/enemy/enemy_1305_mhslim` and `spine/enemy/enemy_1305_mhslim_2`).
-    User feedback after 0.1.0 (D3: "所有特殊源石虫的模型全表现为普通源石虫"): the ELEMENT faction spawns up to ten of them a
-    round. A 2026-10-03 audit of every enemy of `data/enemies.json` (249) against the client's battle prefabs (the
-    skeleton each prefab's Spine renderer draws) found no other enemy drawn with another enemy's model; 伊利昂的木驮兽
-    (`enemy_10159_mntrjn`) starts on its `Full` skin (five passengers) in the game and is drawn with the `default` one.
+- **Enemy aliases:** `enemies[id].spineAliasOf` means the model belongs to another enemy: `_2` variants whose official
+  prefab is the base one (鸭爵, 高普尼克, 流泪小子, 圆仔, 假想敌：胄, 假想敌：铳) draw the base model, as in the game. Those are
+  the only aliases left — 灼热源石虫 / 炽焰源石虫, the one enemy that used to borrow a *different* enemy's skeleton, have
+  their own model now (below).
+- **灼热源石虫 / 炽焰源石虫** (`enemy_1305_mhslim` / `_2`, user feedback after 0.1.0, D3: "所有特殊源石虫的模型全表现为普通源石虫";
+  the ELEMENT faction spawns up to ten of them a round). Ark-Models' index *lists* `1305_mhslim` / `1305_mhslim_2` with an
+  **empty `assetList`** (registered, never uploaded), so the plan used to alias them to `enemy_1007_slime` and the
+  renderer tinted the plain 源石虫 toward their lava colours (`render/units.js ALIAS_TINT`) — a different enemy rather
+  than a variant of it. Their own model is now the web model: `plan.mjs ENEMY_SPINE_MOBILE` + `prtsModel()` take
+  `enemy_spine/{enemyId}/{enemyId}.{skel,atlas,png}` from the **mobile** build, which PRTS mirrors (`sources.mjs
+  RAW.prts`). Mobile atlases carry no `pma: true` line (straight alpha, unlike the PC build's premultiplied pages), so
+  both entries declare `pma: false` and `normalizeAtlas()` leaves their pages alone. This is the one source that is not
+  a GitHub dump: PRTS is a third-party mirror of the mobile client, so a run that cannot reach it loses those two
+  Spines (the client draws their `icon` — the correct art — and an install with the extraction below still gets the
+  model; `fetch-assets` lists the miss).
+  `tools/local-extract/extract.py ENEMY_SPINES` writes the same official model from the local client to
+  `public/assets/local/spine/enemy/{enemyId}/` (page textures with their `[alpha]` texture merged in: premultiplied
+  RGB + A like Ark-Models; the atlas gets `size:` and `pma: true`) and lists its files in `data/local-assets.json`, and
+  that stays an optional **overlay**, `enemies[id].spineLocal` = `{ group, skel, atlas, textures, pma, anims,
+  animations, events, hits, bounds }` (file names in the `data/local-assets.json` group `spine/enemy/{enemyId}`; the
+  rest as a `spine` entry):
+  - The metadata comes from the committed `tools/assets/local-enemy-spines.json` (`fetch-assets --local-spines`
+    parses the extracted models into it), never from the disk: `data/assets.json` is byte-identical with or without the
+    extraction, it has no `/assets/local/` URL, and setup / doctor / the manifest tests never miss these files.
+  - The client (`assets.js spineEntry`, with `assets.local()`, which `createFieldView` awaits with the manifest) draws
+    the extraction when the local manifest lists every file of it, and falls back to the web model when the extraction
+    fails to load (`UnitView`: the entry's `fallback`). Both sources are the same official model — their metadata is
+    asserted equal (`test/feedback1d-models.test.js`), only the alpha convention differs — so an install without the
+    extraction draws the real slug now, untinted. A release bundle carries the extraction only when it is zipped from
+    a checkout where it ran with the `spine/enemy` job (an extraction made with 0.1.0 lacks it: `node tools/setup.mjs
+    --local` again, then check that `data/local-assets.json` lists `spine/enemy/enemy_1305_mhslim` and
+    `spine/enemy/enemy_1305_mhslim_2`).
+  A 2026-10-03 audit of every enemy of `data/enemies.json` (249) against the client's battle prefabs (the skeleton each
+  prefab's Spine renderer draws) found no other enemy drawn with another enemy's model; 伊利昂的木驮兽
+  (`enemy_10159_mntrjn`) starts on its `Full` skin (five passengers) in the game and is drawn with the `default` one.
 
 ### Other fallbacks
 
@@ -313,7 +326,7 @@ Other renderer rules from research 07 §5.4–5.5:
 When `public/assets` exists, the same file also checks the generated output:
 - Every manifest path exists on disk.
 - Every pool operator has an avatar, a portrait and a Front model.
-- Every atlas has `size:` lines, plus `pma: true` for enemies.
+- Every atlas has `size:` lines and a `pma` flag that matches its manifest entry (`true` for the Ark-Models enemies and the local extraction, `false` for the mobile-build slugs).
 - Every Spine model loads the way the client loads it. That means pixi-spine's atlas reader with real page sizes, where a region outside its page throws, then `SkeletonBinary` with `AtlasAttachmentLoader`, where a missing region throws. Every resolved role is then posed.
 
 The 2026-09-27 verification pass also checked:
@@ -337,6 +350,7 @@ The project's code is GPL-3.0-or-later (`LICENSE`); none of the items below is c
   - [isHarryh/Ark-Models](https://github.com/isHarryh/Ark-Models) (ArkUnpacker). Not for commercial use.
   - [ArknightsAssets/ArknightsAssets2](https://github.com/ArknightsAssets/ArknightsAssets2) (ArknightsStudio)
   - [Kengxxiao/ArknightsGameData](https://github.com/Kengxxiao/ArknightsGameData)
+  - [PRTS Wiki](https://prts.wiki) — its asset mirror `torappu.prts.wiki` serves the *mobile* client, incl. the enemy Spine models of `plan.mjs ENEMY_SPINE_MOBILE`. A community wiki; its texts are CC BY-NC-SA, the game assets remain Hypergryph's.
 - **Spine runtime.** pixi-spine is MIT-licensed. It embeds Spine Runtime code under the [Spine Runtimes License](http://esotericsoftware.com/spine-runtimes-license), which formally expects a Spine Editor licence. This is commonly tolerated for non-commercial fan tools, and the Spine Runtimes License must be credited (`THIRD-PARTY-NOTICES.md`). The project's GPL carries an additional permission (section 7) to combine it with the Spine Runtimes (`NOTICE.md`).
 - **Fonts.**
   - **Bender:** © Jovanny Lemonad (Oleg Zhuravlev, Ivan Gladkikh). Free for personal and commercial use.

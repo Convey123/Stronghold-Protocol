@@ -25,15 +25,15 @@ import { literal } from './manifest.mjs';
 import { EMOTE_CATALOG } from '../../shared/constants.js';
 
 /**
- * Enemies whose Spine no community dump carries: the web model is another enemy's (research 07 §5.6). Their official
- * models come from the local client only (tools/local-extract ENEMY_SPINES): `localEnemySpines` adds them as the
- * optional `spineLocal` overlay, which the client draws when data/local-assets.json lists its files (user feedback
- * after 0.1.0, D3: 灼热源石虫 / 炽焰源石虫 were drawn as the plain 源石虫 everywhere).
+ * 灼热源石虫 / 炽焰源石虫 (user feedback after 0.1.0, D3: both were drawn as the plain 源石虫 everywhere): the
+ * Ark-Models index *lists* `1305_mhslim` / `1305_mhslim_2` but with an EMPTY `assetList` — they were registered and
+ * never uploaded — so `arkModel()` returned nothing and the alias chain gave them `enemy_1007_slime`'s skeleton, a
+ * different enemy rather than a variant of it. No other dump carries them either, but the *mobile* build does, and
+ * PRTS mirrors it (`sources.mjs RAW.prts`, `prtsModel()` below), so their own model is the web model now. Their
+ * official model also comes from the local client (tools/local-extract ENEMY_SPINES): `localEnemySpines` still adds
+ * it as the optional `spineLocal` overlay, which the client prefers when data/local-assets.json lists its files.
  */
-export const ENEMY_SPINE_ALIAS = Object.freeze({
-  enemy_1305_mhslim: 'enemy_1007_slime',
-  enemy_1305_mhslim_2: 'enemy_1007_slime',
-});
+export const ENEMY_SPINE_MOBILE = Object.freeze(['enemy_1305_mhslim', 'enemy_1305_mhslim_2']);
 
 /** Loading illustrations referenced by act2autochess modeDataDict (non-training). */
 const LOADING_USED = new Set(['loading_ac_core', 'loading_ac_prototype', 'loading_ac_hard', 'loading_ac_abyss']);
@@ -364,6 +364,25 @@ export function buildPlan({ assets07, ops03, enemies05, maps05, audio, modelsDat
       pngs: [mk(png, rec07?.png)],
     });
   };
+  /**
+   * The enemy's own Spine from the *mobile* build (PRTS): the same layout as Ark-Models
+   * (`enemy_spine/<enemyId>/<enemyId>.{skel,atlas,png}`), but **straight-alpha** textures — the mobile atlases carry
+   * no `pma: true` line, unlike the PC build's premultiplied pages — so the model is planned with `pma: false` and
+   * `normalizeAtlas()` leaves its pages alone. Only for the enemies of ENEMY_SPINE_MOBILE (the Ark-Models dump has no
+   * files for them).
+   */
+  const prtsModel = (eid) => {
+    const stem = safeName(eid);
+    const base = `${RAW.prts}enemy_spine/${encodeURIComponent(eid)}/`;
+    const dir = `spine/enemy/${eid}/`;
+    const mk = (ext) => alt(`${dir}${stem}.${ext}`, base + encodeURIComponent(`${eid}.${ext}`));
+    return addModel(`enemy:${eid}`, {
+      kind: 'enemy', dir, pma: false, skillIndices: [0], baseUrl: base,
+      skel: mk('skel'),
+      atlas: { ...mk('atlas'), mutable: true },
+      pngs: [mk('png')],
+    });
+  };
   const baseIdOf = (eid) => { const m = /^(enemy_\d+_[a-z0-9]+?)_\d+$/i.exec(eid); return m ? m[1] : null; };
   const enemyIdSet = new Set(collectEnemyIds({ assets07, enemies05, maps05, ops03 }));
   for (const id of extraEnemyIds) if (typeof id === 'string' && /^enemy_\d+_[a-z0-9_]+$/i.test(id)) enemyIdSet.add(id);
@@ -377,18 +396,23 @@ export function buildPlan({ assets07, ops03, enemies05, maps05, audio, modelsDat
     const iconAlts = [alt(`enemy/icon/${id}.png`, `${RAW.yuanyan}enemy/${id}.png`, bytesOf(icon07, `${RAW.yuanyan}enemy/${id}.png`))];
     for (const other of [handbookOf.get(id), baseIdOf(id)]) if (other) iconAlts.push(alt(`enemy/icon/${id}.png`, `${RAW.yuanyan}enemy/${other}.png`));
     e.icon = leaf(iconAlts);
-    // Spine: own model, else alias chain (research 07 §5.6).
+    // Spine: own model from Ark-Models, else the enemy's own model from the mobile build (ENEMY_SPINE_MOBILE), else
+    // the alias chain of its own variant family (research 07 §5.6).
     let spine = arkModel(id);
+    if (!spine && ENEMY_SPINE_MOBILE.includes(id)) {
+      spine = prtsModel(id);
+      notes.push(`${id}: Spine from the mobile build (PRTS, pma off)`);
+    }
     if (!spine) {
       const seen = new Set([id]);
-      const queue = [ENEMY_SPINE_ALIAS[id], baseIdOf(id), handbookOf.get(id)].filter(Boolean);
+      const queue = [baseIdOf(id), handbookOf.get(id)].filter(Boolean);
       while (!spine && queue.length) {
         const cand = queue.shift();
         if (seen.has(cand)) continue;
         seen.add(cand);
         spine = arkModel(cand);
         if (spine) e.spineAliasOf = cand;
-        else queue.push(...[ENEMY_SPINE_ALIAS[cand], baseIdOf(cand), handbookOf.get(cand)].filter(Boolean));
+        else queue.push(...[baseIdOf(cand), handbookOf.get(cand)].filter(Boolean));
       }
       if (!spine) notes.push(`${id}: no enemy Spine upstream (client draws the icon, if any, or a glyph)`);
       else notes.push(`${id}: Spine aliased to ${e.spineAliasOf}`);

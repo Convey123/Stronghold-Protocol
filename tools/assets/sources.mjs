@@ -1,10 +1,12 @@
-// Upstream asset sources (GitHub dumps of the official client), URL helpers and
-// local-path helpers shared by the asset pipeline (tools/fetch-assets.mjs).
+// Upstream asset sources (GitHub dumps of the official client, plus PRTS for
+// the mobile build), URL helpers and local-path helpers shared by the asset
+// pipeline (tools/fetch-assets.mjs).
 //
-// Every URL we download from is a raw.githubusercontent.com URL; mirrorUrl()
-// maps it to the equivalent jsDelivr URL used as a fallback when GitHub raw
-// fails. jsDelivr 404s on the ArknightsAssets2 `voice` branch, so no mirror is
-// offered for audio. See docs/ASSETS.md for the full source list and credits.
+// Almost every URL we download from is a raw.githubusercontent.com URL;
+// mirrorUrl() maps it to the equivalent jsDelivr URL used as a fallback when
+// GitHub raw fails. jsDelivr 404s on the ArknightsAssets2 `voice` branch, so no
+// mirror is offered for audio, and `prts` is not on GitHub at all (no mirror
+// either). See docs/ASSETS.md for the full source list and credits.
 
 /** Raw base URLs (always end with '/'). */
 export const RAW = Object.freeze({
@@ -15,6 +17,12 @@ export const RAW = Object.freeze({
   aa2voice: 'https://raw.githubusercontent.com/ArknightsAssets/ArknightsAssets2/voice/assets/dyn/audio/sound_beta_2/',
   fonts: 'https://raw.githubusercontent.com/TimWangZi/The-font-of-Arknights/master/font/',
   gamedata: 'https://raw.githubusercontent.com/Kengxxiao/ArknightsGameData/master/zh_CN/gamedata/',
+  // PRTS (the community wiki) mirrors the *mobile* build: `enemy_spine/<enemyId>/<enemyId>.{skel,atlas,png}` is an
+  // enemy's battle model as the official client ships it. Mobile atlases carry no `pma: true` line (straight alpha,
+  // unlike the PC build's premultiplied pages), so a model taken from here is planned with `pma: false` — plan.mjs
+  // prtsModel(). Only enemies no other dump carries need it: Ark-Models *lists* `1305_mhslim` / `1305_mhslim_2` with an
+  // empty `assetList` (registered, never uploaded), which used to draw 灼热源石虫 / 炽焰源石虫 as a plain 源石虫.
+  prts: 'https://torappu.prts.wiki/assets/',
 });
 
 const RAW_RE = /^https:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/([^/]+)\/(.+)$/;

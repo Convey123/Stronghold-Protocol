@@ -46,7 +46,8 @@ All names, characters, artwork, Spine models, UI graphics, music, sound effects 
 [yuanyan3060/ArknightsGameResource](https://github.com/yuanyan3060/ArknightsGameResource),
 [fexli/ArknightsResource](https://github.com/fexli/ArknightsResource),
 [isHarryh/Ark-Models](https://github.com/isHarryh/Ark-Models),
-[ArknightsAssets/ArknightsAssets2](https://github.com/ArknightsAssets/ArknightsAssets2) — thanks to their maintainers.
+[ArknightsAssets/ArknightsAssets2](https://github.com/ArknightsAssets/ArknightsAssets2) and
+[PRTS Wiki](https://prts.wiki) (`torappu.prts.wiki`, the mobile client's enemy Spine models) — thanks to their maintainers.
 Quotations of PRTS Wiki, BWIKI, NGA, 巴哈姆特 and other community pages in `docs/` stay under the terms of their
 sources (the wikis' texts are CC BY-NC-SA).
 
