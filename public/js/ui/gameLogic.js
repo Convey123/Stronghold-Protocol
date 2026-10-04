@@ -193,6 +193,49 @@ export function battleOverSfx(cost) {
   return cost.unite ? 'battleOverNoReduce' : 'battleOverNormal';
 }
 
+/** How long a result box (ui/components.ResultDialog) stays up, in the phase banners' own pace. */
+export const RESULT_BOX_MS = 2800;
+
+/**
+ * The big 联防 result box the official pops up once the joint defence resolves (user request: "跳一个大框出来，然后
+ * 提示联防成功" — the remake only had the top capsule and a ticker line). Built from `pub.uniteResult`, the outcome the
+ * server carries in its SETTLE view (Match.settle): `through` is the authority's own count of the leaked enemies that
+ * still got through, so the helper, the leaker and every spectator show the same box — and nobody has to guess it from
+ * a frame that may predate the last kill.
+ * @param {{ through?: number, helpers?: string[] } | null | undefined} res pub.uniteResult
+ * @param {any} pub the public view (only `players` is read, to name the helpers)
+ * @returns {{ title: string, micro: string, tone: string, sub: string, duration: number } | null} null when no 联防 resolved
+ */
+export function uniteResultBox(res, pub) {
+  const through = Number(res?.through);
+  if (!Number.isFinite(through) || through < 0) return null;
+  const names = new Map(sortedPlayers(pub).map((p) => [p.playerId, p.name || '博士']));
+  const helpers = (Array.isArray(res?.helpers) ? res.helpers : []).map((id) => names.get(id)).filter(Boolean);
+  const who = helpers.length ? helpers.join('、') : '队友';
+  return through === 0
+    ? { title: '联防成功', micro: 'JOINT DEFENSE', tone: 'mint', sub: `${who} 拦下了全部突破防线的敌人`, duration: RESULT_BOX_MS }
+    : { title: '联防失败', micro: 'JOINT DEFENSE', tone: 'red', sub: `还有 ${through} 只敌人突破防线`, duration: RESULT_BOX_MS };
+}
+
+/**
+ * The own battle's result box, shown at settlement when no 联防 resolved ("每一把结束以后都有一个成功"): the official
+ * announces every battle's outcome. `cost` is what this round's own battle was last seen to cost, captured while it ran
+ * (screens/game.js `roundLossRef`) — `leaks` = counted enemies that got through, `pending` = the LP that will cost.
+ * @param {{ leaks?: number, pending?: number } | null} cost
+ * @returns {{ title: string, micro: string, tone: string, sub: string, duration: number } | null} null without a battle
+ */
+export function battleResultBox(cost) {
+  if (!cost) return null;
+  const leaks = Number.isFinite(cost.leaks) ? Math.max(0, Math.trunc(cost.leaks)) : null;
+  if (leaks == null) return null;
+  if (leaks === 0) return { title: '作战成功', micro: 'COMBAT CLEAR', tone: 'mint', sub: '没有敌人突破防线', duration: RESULT_BOX_MS };
+  const loss = Math.max(0, Math.trunc(Number(cost.pending) || 0));
+  return {
+    title: '作战失败', micro: 'COMBAT OVER', tone: 'red',
+    sub: loss > 0 ? `漏过 ${leaks} 只 · 目标生命值 −${loss}` : `漏过 ${leaks} 只敌人`, duration: RESULT_BOX_MS,
+  };
+}
+
 /** Label of the prep capsule ("休息一下" in the original). */
 export function prepCapsuleLabel(phase) {
   if (phase === PHASE.SP_DRAFT) return '机变阶段';

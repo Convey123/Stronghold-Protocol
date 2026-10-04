@@ -730,6 +730,41 @@ export function PhaseBanner({ title, sub, micro, tone = 'mint', mode = 'inline',
   </div>`;
 }
 
+/**
+ * Big centred result box (the official's 联防/作战 result pop-up: user request "跳一个大框出来，然后提示联防成功").
+ * A framed panel — tone-coloured frame and corner ticks, chevrons left and right of the title — that wipes open from
+ * the middle, holds `duration` ms and closes by itself. Purely presentational: gameLogic.uniteResultBox /
+ * battleResultBox decide the words, screens/game.js decides when. `pointer-events: none`, so it never eats a click
+ * during settlement.
+ * @param {{ title: any, sub?: any, micro?: string, tone?: 'mint'|'orange'|'red'|'gold'|'ice', duration?: number,
+ *   onDone?: Function, icon?: any, class?: string }} props duration (ms) > 0 auto-hides then calls onDone. Re-key to replay.
+ */
+export function ResultDialog({ title, sub, micro, tone = 'mint', duration = 2800, onDone, icon, class: cls }) {
+  const [leaving, setLeaving] = useState(false);
+  const [gone, setGone] = useState(false);
+  useEffect(() => {
+    if (!(duration > 0)) return undefined;
+    const t1 = setTimeout(() => setLeaving(true), duration);
+    const t2 = setTimeout(() => { setGone(true); onDone?.(); }, duration + 300);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [duration]);
+  if (gone) return null;
+  return html`<div class=${cx('rdialog', `rdialog--${tone}`, leaving && 'is-leaving', cls)} role="status" aria-live="polite">
+    <div class="rdialog__box">
+      <span class="rdialog__tick rdialog__tick--tl"></span><span class="rdialog__tick rdialog__tick--tr"></span>
+      <span class="rdialog__tick rdialog__tick--bl"></span><span class="rdialog__tick rdialog__tick--br"></span>
+      ${micro ? html`<span class="rdialog__micro">${micro}</span>` : null}
+      <div class="rdialog__row">
+        <${Chevrons} count=${3} tone=${tone} class="rdialog__chev rdialog__chev--l" />
+        ${icon ? html`<span class="rdialog__icon">${icon}</span>` : null}
+        <span class="rdialog__title">${title}</span>
+        <${Chevrons} count=${3} tone=${tone} dir="left" class="rdialog__chev rdialog__chev--r" />
+      </div>
+      ${sub ? html`<span class="rdialog__sub">${sub}</span>` : null}
+    </div>
+  </div>`;
+}
+
 // ---- domain helpers ----------------------------------------------------------------------------
 
 /**

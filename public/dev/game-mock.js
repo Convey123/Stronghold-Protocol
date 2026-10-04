@@ -394,6 +394,14 @@ function startCombat(phase) {
     pub.unite = leakMock ? { helpers: ['ai_2', 'p3'], leakers: ['p1', 'p4'] } : { helpers: ['p1', 'ai_2'], leakers: ['p3'] };
     if (leakMock) { leftOf('p1', 13); leftOf('p4', 3); pub.players[0].status = 'done'; pub.players[2].status = 'helping'; } else leftOf('p3', 12);
   }
+  // 联防 result box (Match.settle → m.public.uniteResult, ui/gameLogic.uniteResultBox): ?phase=SETTLE&variant=unite
+  // pops 联防成功, `unite,through` pops 联防失败 with the count that got through. Without either, the SETTLE view carries
+  // no uniteResult and the round's own battle result box takes over (battleResultBox).
+  if (phase === PHASE.SETTLE && VARIANTS.has('unite')) {
+    pub.uniteResult = VARIANTS.has('through')
+      ? { through: 3, helpers: ['ai_2', 'p3'], leakers: ['p1', 'p4'] }
+      : { through: 0, helpers: ['ai_2', 'p3'], leakers: ['p1', 'p4'] };
+  }
   const countKill = () => {
     if (phase !== PHASE.UNITE) return;
     const pid = leakMock ? 'p1' : 'p3';

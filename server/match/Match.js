@@ -370,6 +370,8 @@ export class Match {
     this.watchers = new Map();
     this.lastResults = new Map();
     this.unitePlan = null;
+    /** 联防 outcome for the SETTLE view: { through, helpers, leakers } (settle()), null when no 联防 ran this round */
+    this.uniteResultView = null;
     /** server-run 联防: the leakers' counts last published (_uniteTick) */
     this._uniteLeftKey = null;
     /** 联防: { plan, bounds } — per leaker the most survivors settlement can bill (_uniteLeft's clamp) */
@@ -927,6 +929,9 @@ export class Match {
       };
     }
     if (this.phase === PHASE.UNITE && this.unitePlan) v.unite = { helpers: this.unitePlan.helpers.map((p) => p.playerId), leakers: this.unitePlan.leakers.map((p) => p.playerId) };
+    // the 联防's outcome as data (set by settle(), see there): the SETTLE view carries it so the client can show the
+    // result box (ui/components.ResultDialog via ui/gameLogic.uniteResultBox) — { through, helpers, leakers }
+    if (this.phase === PHASE.SETTLE && this.uniteResultView) v.uniteResult = { ...this.uniteResultView, helpers: this.uniteResultView.helpers.slice(), leakers: this.uniteResultView.leakers.slice() };
     return v;
   }
 
@@ -1497,6 +1502,7 @@ export class Match {
     this.fields = [];
     this.watchers.clear();
     this.unitePlan = null;
+    this.uniteResultView = null;
     this.sp = null;
     this.wave = null;
     this.bossWaves = null;
@@ -2882,6 +2888,9 @@ export class Match {
     // 联防 outcome notice (user request: "联防成功后加一个像原版卫戍的提示"): the official shows a 「联防阶段」 banner
     // and the capsule 「联防开始」 while the helpers fight; the remake announces the RESULT once that battle is over —
     // every leaked enemy stopped, or how many still got through (the leakers' LP, charged below, is capped per round).
+    // The ticker line is the running commentary; `uniteResultView` is the same outcome as data, carried in the SETTLE
+    // public so EVERY client (helper, leaker, spectator) can pop the official's big result box (user follow-up:
+    // "跳一个大框出来，然后提示联防成功") from the authority's own count instead of guessing it from a stale frame.
     if (uniteRan && Array.isArray(plan.leakers) && plan.leakers.length) {
       let through = 0;
       for (const lk of plan.leakers) through += Math.max(0, survivors.get(lk.playerId) || 0);
@@ -2889,6 +2898,13 @@ export class Match {
       this.tickerText(through === 0
         ? `联防成功：${names} 拦下了全部突破防线的敌人`
         : `联防结束：还有 ${through} 只敌人突破防线`, FLOW_TICKER_PRIORITY);
+      this.uniteResultView = {
+        through,
+        helpers: plan.helpers.map((p) => p.playerId),
+        leakers: plan.leakers.map((p) => p.playerId),
+      };
+    } else {
+      this.uniteResultView = null;
     }
     const alive = this.alivePlayers();
     for (const ps of alive) {

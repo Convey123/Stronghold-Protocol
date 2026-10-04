@@ -9,7 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   phaseMode, phaseBanner, isCombatPhase, isBossPhase, countdownState, phaseTotalSeconds, sortBonds, bondTier, nextThreshold,
-  battleOverSfx,
+  battleOverSfx, uniteResultBox, battleResultBox,
   bondMembers, memberHeadCount, bannedPerBond, priceTone, mergeProgress, shopBlockReason, deploySets, indexPieces, placementContext, canPlace,
   boardTargets, dropIntent, normalizeDraft, normalizeSp, groupEnemies, factionTypes, snapHud, bossFrac, attackInterval, fmtNum,
   rangeGridBox, shortcutFor, sanitizeSettings, DEFAULT_SETTINGS, normalizeResult, cycleField, fieldLabel, homeFieldId,
@@ -80,6 +80,37 @@ describe('phases', () => {
     assert.equal(battleOverSfx({ pending: 0, unite: true }), 'battleOverNoReduce');
     assert.equal(battleOverSfx({ pending: 0, unite: false }), 'battleOverNormal');
     assert.equal(battleOverSfx(null), null);
+  });
+  test('联防 result box: the server\'s count decides 成功 / 失败, the helpers are named', () => {
+    const pub = { players: [{ playerId: 'p_0', seat: 0, name: '可汗' }, { playerId: 'p_1', seat: 1, name: '博士' }, { playerId: 'p_2', seat: 2, name: '阿米娅' }] };
+    const ok = uniteResultBox({ through: 0, helpers: ['p_1', 'p_2'], leakers: ['p_0'] }, pub);
+    assert.equal(ok.title, '联防成功');
+    assert.equal(ok.tone, 'mint');
+    assert.equal(ok.sub, '博士、阿米娅 拦下了全部突破防线的敌人');
+    assert.ok(ok.duration > 1500, 'it holds long enough to read');
+    const bad = uniteResultBox({ through: 3, helpers: ['p_1'] }, pub);
+    assert.equal(bad.title, '联防失败');
+    assert.equal(bad.tone, 'red');
+    assert.match(bad.sub, /还有 3 只敌人突破防线/);
+    // no 联防 this round (or a client that never saw the outcome): no box at all
+    assert.equal(uniteResultBox(null, pub), null);
+    assert.equal(uniteResultBox(undefined, pub), null);
+    assert.equal(uniteResultBox({}, pub), null);
+    assert.equal(uniteResultBox({ through: -1 }, pub), null);
+    // an unknown helper id still yields a readable box
+    assert.equal(uniteResultBox({ through: 0, helpers: ['nobody'] }, pub).sub, '队友 拦下了全部突破防线的敌人');
+  });
+  test('作战 result box: 成功 without a leak, the count and the LP otherwise, nothing without a battle', () => {
+    const ok = battleResultBox({ leaks: 0, pending: 0 });
+    assert.equal(ok.title, '作战成功');
+    assert.equal(ok.sub, '没有敌人突破防线');
+    const bad = battleResultBox({ leaks: 14, pending: 10 });
+    assert.equal(bad.title, '作战失败');
+    assert.equal(bad.sub, '漏过 14 只 · 目标生命值 −10');
+    // the settlement already landed (pending back to 0) — the count still reads
+    assert.equal(battleResultBox({ leaks: 2, pending: 0 }).sub, '漏过 2 只敌人');
+    assert.equal(battleResultBox(null), null);
+    assert.equal(battleResultBox({}), null);
   });
 });
 

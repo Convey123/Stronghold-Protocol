@@ -66,7 +66,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from '../../vendor/hooks.module.js';
 import { PHASE, GEO } from '../../../shared/constants.js';
 import { fxForm } from '../../../shared/protocol.js';
-import { html, Spinner, PhaseBanner, Icon, Button, MicroLabel, confirmDialog, closeAllDialogs, useTicker } from '../ui/components.js';
+import { html, Spinner, PhaseBanner, ResultDialog, Icon, Button, MicroLabel, confirmDialog, closeAllDialogs, useTicker } from '../ui/components.js';
 import { useGameData, GIcon } from '../ui/gameComponents.js';
 import { useFieldView } from '../ui/fieldHost.js';
 import { TopBar, liveLp, ownLeaks, uniteRemaining, tempInfo, tempReadyReason } from '../ui/hud.js';
@@ -93,7 +93,7 @@ import { pauseAvailable, isPaused, frozenNow } from '../ui/matchStatus.js';
 import { pieceTile } from '../render/drag.js';
 import {
   phaseMode, phaseBanner, isCombatPhase, showDeadPill, isBossPhase, placementContext, canPlace, boardTargets, dropIntent,
-  battleOverSfx,
+  battleOverSfx, uniteResultBox, battleResultBox,
   snapHud, activeBubbles, shortcutFor, shortcutBlocked, closesOnFieldPress, phaseTotalSeconds, homeFieldId, ownFieldId, normalizeSp, sortedPlayers,
   countdownState, shopBlockReason, stageOverrides, effectiveStage, watchTarget, dropFailureReason,
   previewEnemyKey, prepCamera, prepCameraFor, foldCamera, deployFieldOf, panelSide, panelSlots, bondPopupPlace, chessLoadout, unitLoadout,
@@ -215,6 +215,7 @@ function MatchScreen() {
   const [holdSeq, setHoldSeq] = useState(0);             // bumped when a held piece is released (re-apply the prep state)
   const [hud, setHud] = useState(null);
   const [banner, setBanner] = useState(null);
+  const [resultBox, setResultBox] = useState(null);      // 联防 / 作战 result box (ResultDialog), shown at SETTLE
   const [readyBusy, setReadyBusy] = useState(false);
   const [spBusy, setSpBusy] = useState(null);
   const [layer, setLayer] = useState('ALL');             // 联防 / 最终攻势 camera: 'L' | 'ALL' | 'R'
@@ -276,7 +277,7 @@ function MatchScreen() {
   // 战斗结束 sound with three variants (battle.ON_ACT1AUTOCHESS BATTLEOVER_NORMAL / _REDUCE / _NOREDUCE, all three
   // already in the manifest but never played): _REDUCE when the battle cost LP, _NOREDUCE when a 联防 ran and nothing
   // got through, _NORMAL otherwise. [ASSUMED mapping — the client data names the three but not their triggers.]
-  if (isCombatPhase(phase)) roundLossRef.current = { pending: liveLpNow.pending, unite: !!pub?.unite };
+  if (isCombatPhase(phase)) roundLossRef.current = { pending: liveLpNow.pending, leaks: ownLeaks(localLeaks, meP?.pendingLp), unite: !!pub?.unite };
 
   // latest values for event handlers bound once
   const live = useRef({});
@@ -584,9 +585,15 @@ function MatchScreen() {
     else if (phase === PHASE.SP_DRAFT) audio.sfx('draft');
     else if (phase === PHASE.SETTLE) {
       // 战斗结束: the official BATTLEOVER_* variants, picked from the round's own battle cost (ui/gameLogic.battleOverSfx)
-      const key = battleOverSfx(roundLossRef.current);
+      const cost = roundLossRef.current;
       roundLossRef.current = null;
+      const key = battleOverSfx(cost);
       if (key) audio.sfx(key);
+      // and the result box the official pops up when the fight resolves (user request: "跳一个大框出来"): the 联防's own
+      // outcome first — the server's count, the same for helper, leaker and spectator (ui/gameLogic.uniteResultBox) —
+      // else this round's own battle ("每一把结束以后都有一个成功", battleResultBox)
+      const box = uniteResultBox(pub?.uniteResult, pub) || battleResultBox(cost);
+      if (box) setResultBox({ ...box, key: `result:${pub?.round}:${prev}` });
     }
     setWatching(null); // the server resets every watcher to its own field on phase changes
     setWatchWho(null);
@@ -1340,6 +1347,9 @@ function MatchScreen() {
 
     ${banner ? html`<${PhaseBanner} key=${banner.key} mode="overlay" title=${banner.title} sub=${banner.sub} micro=${banner.micro}
       tone=${banner.tone} duration=${banner.duration || 1500} onDone=${() => setBanner(null)} />` : null}
+
+    ${resultBox ? html`<${ResultDialog} key=${resultBox.key} title=${resultBox.title} sub=${resultBox.sub} micro=${resultBox.micro}
+      tone=${resultBox.tone} duration=${resultBox.duration} onDone=${() => setResultBox(null)} />` : null}
 
     ${facing && view ? html`<${FacingWheel} key=${`${facing.uid}:${facing.row},${facing.col}`} view=${view} row=${facing.row} col=${facing.col}
       grid=${facing.grid} name=${facing.name} onPreview=${previewFacing} onCommit=${commitFacing} onCancel=${cancelFacing} />` : null}

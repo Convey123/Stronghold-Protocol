@@ -443,7 +443,8 @@ test('#7 a leaked enemy that splits (磨砻: DeadSpawn ×2) raises the counter �
 // =====================================================================================================================
 // 联防 result notice (user request: "联防成功后加一个像原版卫戍的提示"). The official shows a 「联防阶段」 banner and the
 // capsule 「联防开始」 while the helpers fight; the remake announces the OUTCOME once that battle is over — every leaked
-// enemy stopped, or how many still got through.
+// enemy stopped, or how many still got through. Follow-up ("跳一个大框出来，然后提示联防成功"): the same outcome also
+// rides the SETTLE public view as data (`uniteResult`), which is what the client's big result box renders.
 
 test('联防 outcome ticker: 成功 when the helpers stop everything, the count through otherwise', () => {
   const run = (survivors) => {
@@ -456,6 +457,14 @@ test('联防 outcome ticker: 成功 when the helpers stop everything, the count 
     const before = h.bc.length;
     h.run(() => m.phase === PHASE.SETTLE || h.ended != null, { maxSteps: 5e6 });
     const tickers = h.bc.slice(before).filter((x) => x.t === 'm.ticker').map((x) => x.text);
+    // the SETTLE view every client renders the result box from (helper, leaker and spectator see the same numbers)
+    const view = m.publicView();
+    assert.equal(view.phase, PHASE.SETTLE);
+    assert.deepEqual(view.uniteResult, {
+      through: Object.values(survivors).reduce((a, b) => a + b, 0),
+      helpers: view.uniteResult.helpers, leakers: ['p_0'],
+    }, 'the 联防 outcome rides the SETTLE view');
+    assert.ok(view.uniteResult.helpers.length > 0 && !view.uniteResult.helpers.includes('p_0'), 'the helpers are the perfect players');
     checkInvariants(m);
     m.dispose();
     return tickers;
@@ -465,4 +474,15 @@ test('联防 outcome ticker: 成功 when the helpers stop everything, the count 
   const through = run({ p_0: 2 });
   assert.ok(through.some((t) => t.startsWith('联防结束') && /还有 2 只/.test(t)),
     `expected the count that got through, got ${JSON.stringify(through)}`);
+});
+
+test('no 联防 this round: the SETTLE view carries no uniteResult (the client then shows the round\'s own battle result)', () => {
+  const h = makeMatch({ mode: 'coop', difficulty: 'NORMAL', humans: 2, seed: 6061, fake: true, clientCombat: true, instant: false,
+    script: (b) => ({ duration: 3 }) }).start();
+  const m = h.m;
+  h.autoHumans();
+  h.run(() => m.phase === PHASE.SETTLE || h.ended != null, { maxSteps: 5e6 });
+  assert.equal(m.publicView().uniteResult, undefined);
+  checkInvariants(m);
+  m.dispose();
 });
