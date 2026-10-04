@@ -277,7 +277,20 @@ function MatchScreen() {
   // 战斗结束 sound with three variants (battle.ON_ACT1AUTOCHESS BATTLEOVER_NORMAL / _REDUCE / _NOREDUCE, all three
   // already in the manifest but never played): _REDUCE when the battle cost LP, _NOREDUCE when a 联防 ran and nothing
   // got through, _NORMAL otherwise. [ASSUMED mapping — the client data names the three but not their triggers.]
-  if (isCombatPhase(phase)) roundLossRef.current = { pending: liveLpNow.pending, leaks: ownLeaks(localLeaks, meP?.pendingLp), unite: !!pub?.unite };
+  // The count is kept as a per-round MAXIMUM (leaks only grow in a round; the settled state reads 0, and a frame that
+  // lands after the settlement must not wipe a real count) and only for a player who is actually in the round —
+  // an eliminated player fights nothing, so no box (`battleResultBox`) is built for them.
+  if (isCombatPhase(phase) && alive) {
+    const prev = roundLossRef.current;
+    const same = !!prev && prev.round === pub?.round;
+    const leaks = ownLeaks(localLeaks, meP?.pendingLp);
+    roundLossRef.current = {
+      round: pub?.round,
+      leaks: same ? Math.max(prev.leaks, leaks) : leaks,
+      cap: gd.config?.lpCapPerRound,
+      unite: !!pub?.unite || (same && prev.unite),
+    };
+  }
 
   // latest values for event handlers bound once
   const live = useRef({});

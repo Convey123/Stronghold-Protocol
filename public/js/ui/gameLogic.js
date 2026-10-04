@@ -220,8 +220,11 @@ export function uniteResultBox(res, pub) {
 /**
  * The own battle's result box, shown at settlement when no 联防 resolved ("每一把结束以后都有一个成功"): the official
  * announces every battle's outcome. `cost` is what this round's own battle was last seen to cost, captured while it ran
- * (screens/game.js `roundLossRef`) — `leaks` = counted enemies that got through, `pending` = the LP that will cost.
- * @param {{ leaks?: number, pending?: number } | null} cost
+ * (screens/game.js `roundLossRef`) — `leaks` = counted enemies that got through (the highest the round showed, so the
+ * settlement landing mid-render can never wipe it), `cap` = the round's LP cap (gd.config.lpCapPerRound). The LP figure
+ * is derived from the two (min(cap, leaks), exactly what settlement charges) rather than read from the live pending
+ * value, which is 0 again by the time SETTLE renders.
+ * @param {{ leaks?: number, cap?: number } | null} cost
  * @returns {{ title: string, micro: string, tone: string, sub: string, duration: number } | null} null without a battle
  */
 export function battleResultBox(cost) {
@@ -229,10 +232,11 @@ export function battleResultBox(cost) {
   const leaks = Number.isFinite(cost.leaks) ? Math.max(0, Math.trunc(cost.leaks)) : null;
   if (leaks == null) return null;
   if (leaks === 0) return { title: '作战成功', micro: 'COMBAT CLEAR', tone: 'mint', sub: '没有敌人突破防线', duration: RESULT_BOX_MS };
-  const loss = Math.max(0, Math.trunc(Number(cost.pending) || 0));
+  const cap = Number.isFinite(cost.cap) && cost.cap > 0 ? Math.trunc(cost.cap) : 10;
+  const loss = Math.min(cap, leaks);
   return {
     title: '作战失败', micro: 'COMBAT OVER', tone: 'red',
-    sub: loss > 0 ? `漏过 ${leaks} 只 · 目标生命值 −${loss}` : `漏过 ${leaks} 只敌人`, duration: RESULT_BOX_MS,
+    sub: `漏过 ${leaks} 只 · 目标生命值 −${loss}`, duration: RESULT_BOX_MS,
   };
 }
 

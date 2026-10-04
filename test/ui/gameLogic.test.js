@@ -101,16 +101,18 @@ describe('phases', () => {
     assert.equal(uniteResultBox({ through: 0, helpers: ['nobody'] }, pub).sub, '队友 拦下了全部突破防线的敌人');
   });
   test('作战 result box: 成功 without a leak, the count and the LP otherwise, nothing without a battle', () => {
-    const ok = battleResultBox({ leaks: 0, pending: 0 });
+    const ok = battleResultBox({ leaks: 0, cap: 10 });
     assert.equal(ok.title, '作战成功');
     assert.equal(ok.sub, '没有敌人突破防线');
-    const bad = battleResultBox({ leaks: 14, pending: 10 });
+    const bad = battleResultBox({ leaks: 3, cap: 10 });
     assert.equal(bad.title, '作战失败');
-    assert.equal(bad.sub, '漏过 14 只 · 目标生命值 −10');
-    // the settlement already landed (pending back to 0) — the count still reads
-    assert.equal(battleResultBox({ leaks: 2, pending: 0 }).sub, '漏过 2 只敌人');
+    assert.equal(bad.sub, '漏过 3 只 · 目标生命值 −3');
+    // the per-round LP cap (config.lpCapPerRound): the loss shown is min(cap, leaks), never the leaked count
+    assert.equal(battleResultBox({ leaks: 14, cap: 10 }).sub, '漏过 14 只 · 目标生命值 −10');
+    assert.equal(battleResultBox({ leaks: 14 }).sub, '漏过 14 只 · 目标生命值 −10', 'no cap known → the official 10');
+    assert.equal(battleResultBox({ leaks: 2, cap: 5 }).sub, '漏过 2 只 · 目标生命值 −2');
     assert.equal(battleResultBox(null), null);
-    assert.equal(battleResultBox({}), null);
+    assert.equal(battleResultBox({}), null, 'no battle seen this round (a spectator, a reconnect) → no box');
   });
 });
 
