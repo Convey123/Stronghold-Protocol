@@ -9,6 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   phaseMode, phaseBanner, isCombatPhase, isBossPhase, countdownState, phaseTotalSeconds, sortBonds, bondTier, nextThreshold,
+  battleOverSfx,
   bondMembers, memberHeadCount, bannedPerBond, priceTone, mergeProgress, shopBlockReason, deploySets, indexPieces, placementContext, canPlace,
   boardTargets, dropIntent, normalizeDraft, normalizeSp, groupEnemies, factionTypes, snapHud, bossFrac, attackInterval, fmtNum,
   rangeGridBox, shortcutFor, sanitizeSettings, DEFAULT_SETTINGS, normalizeResult, cycleField, fieldLabel, homeFieldId,
@@ -71,6 +72,14 @@ describe('phases', () => {
     assert.match(phaseBanner(PHASE.ROUND_START, { round: 7 }).title, /7/);
     assert.equal(phaseBanner(PHASE.SETTLE, {}), null);
     assert.equal(prepCapsuleLabel(PHASE.PREP), '休息一下');
+  });
+  test('战斗结束 SFX: the official BATTLEOVER_* variant for the round', () => {
+    // 掉血 → _REDUCE；联防拦下全部（不扣血）→ _NOREDUCE；普通回合 → _NORMAL；本回合没打过（观战 / 重连落在结算）→ 不响
+    assert.equal(battleOverSfx({ pending: 3, unite: false }), 'battleOverReduce');
+    assert.equal(battleOverSfx({ pending: 1, unite: true }), 'battleOverReduce');
+    assert.equal(battleOverSfx({ pending: 0, unite: true }), 'battleOverNoReduce');
+    assert.equal(battleOverSfx({ pending: 0, unite: false }), 'battleOverNormal');
+    assert.equal(battleOverSfx(null), null);
   });
 });
 

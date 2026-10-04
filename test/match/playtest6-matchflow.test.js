@@ -439,3 +439,30 @@ test('#7 a leaked enemy that splits (磨砻: DeadSpawn ×2) raises the counter �
   assert.equal(lp - leaker.lp, Math.min(10, last), `settled LP loss = min(10, ${last} left)`);
   h.m.dispose();
 });
+
+// =====================================================================================================================
+// 联防 result notice (user request: "联防成功后加一个像原版卫戍的提示"). The official shows a 「联防阶段」 banner and the
+// capsule 「联防开始」 while the helpers fight; the remake announces the OUTCOME once that battle is over — every leaked
+// enemy stopped, or how many still got through.
+
+test('联防 outcome ticker: 成功 when the helpers stop everything, the count through otherwise', () => {
+  const run = (survivors) => {
+    const h = makeMatch({ mode: 'coop', difficulty: 'NORMAL', humans: 3, seed: 6060, fake: true, clientCombat: true, instant: false,
+      script: (b) => (b.kind === 'normal'
+        ? (b.players[0] === 'p_0' ? { duration: 2, leaks: { p_0: 3 } } : { duration: 3 })
+        : { duration: 5, survivors }) }).start();
+    const m = h.m;
+    h.autoHumans();
+    const before = h.bc.length;
+    h.run(() => m.phase === PHASE.SETTLE || h.ended != null, { maxSteps: 5e6 });
+    const tickers = h.bc.slice(before).filter((x) => x.t === 'm.ticker').map((x) => x.text);
+    checkInvariants(m);
+    m.dispose();
+    return tickers;
+  };
+  const cleared = run({});
+  assert.ok(cleared.some((t) => t.startsWith('联防成功')), `expected a 联防成功 line, got ${JSON.stringify(cleared)}`);
+  const through = run({ p_0: 2 });
+  assert.ok(through.some((t) => t.startsWith('联防结束') && /还有 2 只/.test(t)),
+    `expected the count that got through, got ${JSON.stringify(through)}`);
+});

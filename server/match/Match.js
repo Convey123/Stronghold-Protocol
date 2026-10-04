@@ -2879,6 +2879,17 @@ export class Match {
     // a 联防 battle that could not run at all (synthetic result) must not wipe the leakers' losses: charge their own leaks
     const uniteRan = !!(plan && uniteResult && !uniteResult.synthetic);
     const survivors = uniteRan ? uniteSurvivors(plan, uniteResult) : null;
+    // 联防 outcome notice (user request: "联防成功后加一个像原版卫戍的提示"): the official shows a 「联防阶段」 banner
+    // and the capsule 「联防开始」 while the helpers fight; the remake announces the RESULT once that battle is over —
+    // every leaked enemy stopped, or how many still got through (the leakers' LP, charged below, is capped per round).
+    if (uniteRan && Array.isArray(plan.leakers) && plan.leakers.length) {
+      let through = 0;
+      for (const lk of plan.leakers) through += Math.max(0, survivors.get(lk.playerId) || 0);
+      const names = plan.helpers.map((p) => p.name).join('、');
+      this.tickerText(through === 0
+        ? `联防成功：${names} 拦下了全部突破防线的敌人`
+        : `联防结束：还有 ${through} 只敌人突破防线`, FLOW_TICKER_PRIORITY);
+    }
     const alive = this.alivePlayers();
     for (const ps of alive) {
       const r = this.lastResults.get(ps.playerId) || { leaked: [], perfect: true, coins: 0, layerGains: {}, killed: 0, damageDealt: 0 };

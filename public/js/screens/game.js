@@ -93,6 +93,7 @@ import { pauseAvailable, isPaused, frozenNow } from '../ui/matchStatus.js';
 import { pieceTile } from '../render/drag.js';
 import {
   phaseMode, phaseBanner, isCombatPhase, showDeadPill, isBossPhase, placementContext, canPlace, boardTargets, dropIntent,
+  battleOverSfx,
   snapHud, activeBubbles, shortcutFor, shortcutBlocked, closesOnFieldPress, phaseTotalSeconds, homeFieldId, ownFieldId, normalizeSp, sortedPlayers,
   countdownState, shopBlockReason, stageOverrides, effectiveStage, watchTarget, dropFailureReason,
   previewEnemyKey, prepCamera, prepCameraFor, foldCamera, deployFieldOf, panelSide, panelSlots, bondPopupPlace, chessLoadout, unitLoadout,
@@ -258,6 +259,8 @@ function MatchScreen() {
   // the local replica's count while it runs, else m.public players[].uniteLeft (ui/hud.js uniteRemaining) — replace it;
   // the teammates' rows take the same local counts (`uniteLocal`, ui/teamPanel.js rowLp)
   const lpBaseRef = useRef(null);
+  /** the round's own battle cost ({ pending, unite }) as last seen while it ran — read once, at SETTLE (see below) */
+  const roundLossRef = useRef(null);
   const localLeaks = battleState && battleState.leaks ? battleState.leaks[ownFieldId(myId)] : undefined;
   const uniteLocal = phase === PHASE.UNITE && battleState && battleState.uniteLeft ? battleState.uniteLeft : null;
   const leaker = phase === PHASE.UNITE && Array.isArray(pub?.unite?.leakers) && pub.unite.leakers.includes(myId);
@@ -268,6 +271,12 @@ function MatchScreen() {
     uniteLeft: leaker ? uniteRemaining(localLeft, meP?.uniteLeft) : null,
   });
   lpBaseRef.current = liveLpNow.base;
+  // What this round's battle will cost me, remembered while it still runs: at SETTLE the settlement has already landed
+  // (Match.flush sends m.private before the SETTLE m.public), so by then the pending part is gone. The official plays a
+  // 战斗结束 sound with three variants (battle.ON_ACT1AUTOCHESS BATTLEOVER_NORMAL / _REDUCE / _NOREDUCE, all three
+  // already in the manifest but never played): _REDUCE when the battle cost LP, _NOREDUCE when a 联防 ran and nothing
+  // got through, _NORMAL otherwise. [ASSUMED mapping — the client data names the three but not their triggers.]
+  if (isCombatPhase(phase)) roundLossRef.current = { pending: liveLpNow.pending, unite: !!pub?.unite };
 
   // latest values for event handlers bound once
   const live = useRef({});
@@ -573,6 +582,12 @@ function MatchScreen() {
     else if (phase === PHASE.FINAL_ASSAULT) audio.sfx(solo ? 'bossRoundSingle' : 'bossRoundTeam');
     else if (phase === PHASE.HIDDEN_CORE) audio.sfx('bossRoundSecret');
     else if (phase === PHASE.SP_DRAFT) audio.sfx('draft');
+    else if (phase === PHASE.SETTLE) {
+      // 战斗结束: the official BATTLEOVER_* variants, picked from the round's own battle cost (ui/gameLogic.battleOverSfx)
+      const key = battleOverSfx(roundLossRef.current);
+      roundLossRef.current = null;
+      if (key) audio.sfx(key);
+    }
     setWatching(null); // the server resets every watcher to its own field on phase changes
     setWatchWho(null);
     // the pen is a 休整期 view: leaving prep returns the camera (the next setCam would, too)

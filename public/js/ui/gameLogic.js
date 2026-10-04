@@ -178,6 +178,21 @@ export function phaseBanner(phase, pub) {
   }
 }
 
+/**
+ * 战斗结束 (the official `BATTLEOVER_*` sounds; all three are in the manifest's `audio.sfx.ui`): `battleOverReduce`
+ * when the round's battle cost LP, `battleOverNoReduce` when a 联防 ran and nothing got through, `battleOverNormal`
+ * otherwise — and null when this round's battle was never seen (a spectator, or a reconnect that lands on SETTLE).
+ * The client data names the three variants but not their triggers, so this mapping is [ASSUMED]; the official plays
+ * them as the settlement lands, which is where `screens/game.js` calls this.
+ * @param {{ pending: number, unite: boolean } | null} cost the round's own battle cost, as it was shown while it ran
+ * @returns {'battleOverReduce'|'battleOverNoReduce'|'battleOverNormal'|null}
+ */
+export function battleOverSfx(cost) {
+  if (!cost) return null;
+  if (Number(cost.pending) > 0) return 'battleOverReduce';
+  return cost.unite ? 'battleOverNoReduce' : 'battleOverNormal';
+}
+
 /** Label of the prep capsule ("休息一下" in the original). */
 export function prepCapsuleLabel(phase) {
   if (phase === PHASE.SP_DRAFT) return '机变阶段';
