@@ -4,10 +4,9 @@
 // the avatar-in-rarity-diamond fallback) + HUD container (bar layer: HP bar with delayed "ghost" damage, SP bar
 // with ready glow / draining skill bar, tier chip, status icons, blocked marker). The fallback shows at once and
 // cross-fades to the Spine model when it has loaded (the game never blocks on Spine); an optional local-client model
-// (assets.js spineEntry `fallback`, DESIGN §13: 灼热源石虫 / 炽焰源石虫) falls back to the web model first; an enemy
-// whose web model is *another* enemy's (manifest `spineAliasOf`) is drawn tinted toward its own colours (ALIAS_TINT;
-// no enemy needs it at present). A model that failed or timed out is loaded again after SPINE_RETRY_MS (bounded), and
-// `retryAssets()` re-resolves a view's picture and model when the
+// (assets.js spineEntry `fallback`, DESIGN §13: 灼热源石虫 / 炽焰源石虫) falls back to the web model first; that web alias
+// (the plain 源石虫) is drawn tinted toward the slug's own colours (ALIAS_TINT). A model that failed or timed out is
+// loaded again after SPINE_RETRY_MS (bounded), and `retryAssets()` re-resolves a view's picture and model when the
 // asset manifest arrives after the view was built or the tab is shown again (render/app.js; public issue #8 item 5:
 // after a reload whose manifest was slow or failed, every operator stayed the image-less placeholder for good). Every
 // bar is a tinted Texture.WHITE sprite, so HUDs batch into few draw calls.
@@ -124,13 +123,11 @@ export const DOWN_LOOK = Object.freeze({
 });
 /**
  * An enemy drawn with another enemy's web model because its own is only in the local client (manifest `spineAliasOf`
- * + `spineLocal`): a multiply tint toward its own colours, so it reads apart from the enemy whose skeleton it borrows
+ * + `spineLocal`: 灼热 / 炽焰源石虫 → the plain 源石虫's skeleton, feedback D3 after 0.1.0): a multiply tint toward its own
+ * lava colours (orange / red-orange), so it reads apart from the plain slug where the local art was not extracted
  * (research 07 §5.6 "a hue shift") [ASSUMED look]. Never on its official (local) model; status tints win over it.
- * Empty since 灼热 / 炽焰源石虫 got their own web model (`plan.mjs ENEMY_SPINE_MOBILE`, PRTS mobile build): the two were
- * the only enemies drawn as a look-alike, and their own art must not be tinted. The mechanism stays for any enemy
- * whose model no dump carries (`baseTint` below reads it by id).
  */
-export const ALIAS_TINT = Object.freeze({});
+export const ALIAS_TINT = Object.freeze({ enemy_1305_mhslim: 0xffc48a, enemy_1305_mhslim_2: 0xff9070 });
 /**
  * Element gauge row under the bars (see header): the disc's diameter in tiles and its pixel clamp (enemies × `enemy`),
  * the gap under the bars (px). The white bar is as tall as the SP bar and fills the rest of the bars' width. During a
@@ -478,7 +475,7 @@ export class UnitView {
       if (swap) this._dropActor();
       this.actor = actor;
       this._actorEntry = entry;
-      this.baseTint = (!entry.local && ALIAS_TINT[id]) || 0xffffff;   // a web model borrowed from another enemy
+      this.baseTint = (!entry.local && ALIAS_TINT[id]) || 0xffffff;   // the web alias of a local-only model
       this.body.addChild(this.actor.spine);
       this.spineReady = true;
       this.swapT = swap ? 1 : 0;

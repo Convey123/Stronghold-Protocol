@@ -140,7 +140,7 @@ export function subProfIconUrl(m, sub) {
  * object of docs/ASSETS.md or null.
  * `opts.local` (the data/local-assets.json manifest): an enemy whose official model only the local client has
  * (`spineLocal`, e.g. 灼热源石虫 — user feedback after 0.1.0, D3) gets that model when the manifest lists every one of
- * its files; the returned entry's `fallback` is the web model, for a load failure (DESIGN §13: local art is
+ * its files; the returned entry's `fallback` is the web model (aliased), for a load failure (DESIGN §13: local art is
  * optional, everything works without it).
  */
 export function spineEntry(m, id, opts) {

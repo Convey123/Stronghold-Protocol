@@ -601,16 +601,7 @@ describe('generated manifest data/assets.json', () => {
     assert.deepEqual(noClip, [], 'Spine skill clips per index (a non-default skill never plays the default skill\'s animation)');
   });
 
-  test('every atlas on disk has size: lines and the pma flag its manifest entry declares', { skip }, () => {
-    // Each model declares its own alpha convention: the Ark-Models enemies are premultiplied (`pma: true`), the two
-    // mobile-build slugs of plan.mjs ENEMY_SPINE_MOBILE (PRTS, straight alpha) are not — the atlas on disk must agree
-    // with the entry that points at it, and an atlas the manifest does not know must still be a premultiplied enemy one.
-    const pmaByAtlas = new Map();
-    const addSpine = (s) => { if (s?.atlas) pmaByAtlas.set(s.atlas, !!s.pma); };
-    for (const c of Object.values(manifest.chars || {})) for (const s of Object.values(c.spine || {})) addSpine(s);
-    for (const e of Object.values(manifest.enemies || {})) addSpine(e.spine);
-    for (const t of Object.values(manifest.tokens || {})) addSpine(t.spine);
-    const assetRel = (p) => '/assets/' + p.slice(ASSETS.length + 1).split('\\').join('/');
+  test('every atlas on disk has size: lines (and pma: true for enemies)', { skip }, () => {
     const atlases = [];
     const walk = (dir) => {
       for (const e of readdirSync(dir, { withFileTypes: true })) {
@@ -624,9 +615,7 @@ describe('generated manifest data/assets.json', () => {
     for (const p of atlases) {
       const info = atlasInfo(readFileSync(p, 'utf8'));
       assert.ok(info.hasSize, `${p} has size`);
-      const want = pmaByAtlas.get(assetRel(p));
-      if (want !== undefined) assert.equal(info.hasPma, want, `${p} pma matches its manifest entry (${want})`);
-      else if (p.includes(`${join('spine', 'enemy')}`)) assert.ok(info.hasPma, `${p} (not in the manifest) has pma`);
+      if (p.includes(`${join('spine', 'enemy')}`)) assert.ok(info.hasPma, `${p} has pma`);
       for (const page of info.pages) assert.ok(existsSync(join(dirname(p), page)), `${p} page ${page}`);
     }
   });
