@@ -19,7 +19,9 @@ npm run assets       # = node tools/vendor.mjs && node tools/fetch-assets.mjs
 | `--force` | Re-download everything. |
 | `--offline` | No network. Re-runs post-processing (atlas fixes, skeleton parsing, WOFF2) on what is already on disk, then rebuilds `data/assets.json`. |
 | `--dry-run` | Print the plan (file and model counts, alias notes) and exit. |
-| `--refresh-index` | Re-download the two upstream indexes: `audio_data.json` and `models_data.json`. |
+| `--refresh-index` | Re-download the upstream indexes: `audio_data.json`, `charword_table.json` (the 干员战斗语音 slots) and `models_data.json`. |
+| `--voice-lang=cn` | 干员战斗语音 language: `cn` (default) | `jp` | `en` | `kr` — the same file names under `voice_cn/`, `voice/`, `voice_en/`, `voice_kr/`. |
+| `--voice-all` | Plan every official voice slot, including the prep-only lines no battle plays (干员报到 / 编入队伍 / 任命队长 — 360 files, one per operator and slot). Off by default: nothing requests them, so planning them only makes every run download more. |
 | `--prune` | Delete files under `public/assets/` that the manifest no longer references, for example after a mapping change. Without this flag they are only listed in the report. `public/assets/local/` (written by `tools/local-extract`) is never pruned. Implies `--allow-shrink`. |
 | `--allow-shrink` | Write `data/assets.json` even when it loses entries the current one has (see "The manifest never shrinks by accident" below). |
 | `--local-spines` | Rewrite `tools/assets/local-enemy-spines.json` (the metadata of the enemy models only the local client has, see "Enemy aliases") from the models `tools/local-extract/extract.py` extracted to `public/assets/local/spine/enemy/`. Run it after a game update changed them; without it the committed file is used and a differing extraction only gets a warning. |
@@ -31,7 +33,9 @@ audio entries short — all 42 still resolve upstream; PR #7). When the rebuilt 
 one, the run keeps the current file, prints the entries it would drop (also in the report: `droppedEntries`,
 `manifestWritten: false`) and exits 1. Re-run to retry the downloads, or pass `--allow-shrink` (or `--prune`) when the
 smaller manifest is intended, for example after a mapping change. Build fields (`version`, `hash`, `generator`,
-`stats`), new entries and a changed value are never a drop (`tools/assets/manifest.mjs droppedEntries`).
+`stats`), new entries and a changed value are never a drop (`tools/assets/manifest.mjs droppedEntries`). A run whose
+plan legitimately narrows — like the 干员战斗语音 default, which no longer plans the three prep-only slots (360 entries,
+DESIGN §21.30) — reports exactly those entries and needs `--allow-shrink` once; the list it prints is the check.
 
 The script is **idempotent**. A file on disk is kept, not re-downloaded, when any one of these holds:
 - its size matches the ledger entry from a previous download (`.cache/assets-ledger.json`);
@@ -48,7 +52,7 @@ How downloads are fetched:
 - A manifest entry with fallbacks (for example an enemy icon that falls back to its base enemy's icon) only moves on to the next alternative after a **definitive 404**. When the primary fails transiently (network error, 5xx or an invalid payload after all retries), no fallback is fetched. The path is listed under `downloadErrors` in the report, and the next run retries the primary.
 - A skeleton that fails to parse is deleted and removed from the ledger, so the next online run downloads it again.
 
-The first run downloads about **328 MiB in about 6,050 files** (it took 134 s on a ~3 MB/s link before the 55 emote and 玩法说明 files, 21.3 MiB, and the 2,040 干员战斗语音 files, 58.5 MiB, were added). A re-run takes about 1 s.
+The first run downloads about **309 MiB in about 5,690 files** (it took 134 s on a ~3 MB/s link before the 55 emote and 玩法说明 files, 21.3 MiB, and the 1,680 干员战斗语音 files, 40.1 MiB, were added). A re-run takes about 1 s. The voice count is the twelve slots a battle plays; the three prep-only slots the official client uses elsewhere (干员报到 / 编入队伍 / 任命队长, 360 more files, 18.4 MiB) are left out unless `--voice-all` is passed.
 
 Outputs:
 - `data/assets.json`: the manifest (committed).
@@ -162,12 +166,14 @@ All paths are URL paths relative to the site root, for example `/assets/char/ava
              // `bgmEvent = corrosion` (卡西米尔 act13d5d0), so the rescue phase does not reuse the 作战's track
              // (audio.js bgmKeyFor 'unite', falling back to `bgm.combat` for a manifest that lacks it)
     bossBgm: { [bossId]: { intro?, loop } },                   // per-boss track of its R14/R15 level
-    voice:   { [charId]: { start, faceEnemy, select, place, skill1…skill4, squad, squadFirst,
-                           resultFour, resultThree, resultTwo, resultLose, gacha } },
+    voice:   { [charId]: { start, faceEnemy, select, place, skill1…skill4,
+                           resultFour, resultThree, resultTwo, resultLose } },
                            // 干员战斗语音: an operator's official battle lines (charword_table.json placeType → slot,
                            // tools/assets/audio.mjs VOICE_SLOTS); a slot with several lines is an array and the client
-                           // draws one (public/js/audio.js voice). Only the battle slots play (DESIGN §21.30) —
-                           // 部署 / 编入队伍 / 任命队长 / 干员报到 are carried for the data's sake
+                           // draws one (public/js/audio.js voice). Only these twelve ever play (DESIGN §21.30): the
+                           // prep-only slots 干员报到 / 编入队伍 / 任命队长 are left out of the plan by default —
+                           // nothing requests them and they cost 360 files (19.3 MB) per run — and `--voice-all` adds
+                           // them (audio.mjs VOICE_PREP_SLOTS) for the complete official set
     sfx: {
       ui:     { click, back, confirm, tab, pick, drop, error, buy, sell, income, refresh, freeze, levelup,
                 merge, equip, itemMerge, bondUp, artPlace, ready, timer, draft, yourTurn, yourTurnCircle,

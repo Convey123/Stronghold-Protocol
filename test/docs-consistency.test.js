@@ -854,8 +854,11 @@ test('干员战斗语音 (DESIGN §21.30): the manifest data, the official prior
   const charIds = Object.keys(voice);
   assert.ok(charIds.length >= 100, `${charIds.length} operators carry official battle voice`);
   assert.equal(manifest.stats.voiceChars, charIds.length, 'stats.voiceChars counts them');
-  // one operator carries the whole official set (the client plays the battle slots, the manifest keeps the prep ones)
-  const slots = ['start', 'faceEnemy', 'select', 'place', 'skill1', 'skill2', 'skill3', 'skill4', 'squad', 'squadFirst', 'resultFour', 'resultThree', 'resultTwo', 'resultLose', 'gacha'];
+  // one operator carries every slot a battle can play — and none of the prep-only ones (plan.mjs VOICE_BATTLE_SLOTS):
+  // 干员报到 / 编入队伍 / 任命队长 are never requested by the client, so planning them only made every `npm run assets`
+  // download 360 files (19.3 MB, one per operator and slot) nobody hears. `--voice-all` brings the complete set back.
+  const slots = ['start', 'faceEnemy', 'select', 'place', 'skill1', 'skill2', 'skill3', 'skill4', 'resultFour', 'resultThree', 'resultTwo', 'resultLose'];
+  const prepOnly = ['gacha', 'squad', 'squadFirst'];
   const lines = [];
   const walk = (x) => {
     if (typeof x === 'string') lines.push(x);
@@ -864,9 +867,11 @@ test('干员战斗语音 (DESIGN §21.30): the manifest data, the official prior
   };
   for (const id of charIds) {
     for (const s of slots) assert.ok(voice[id][s], `${id}.${s}`);
+    for (const s of prepOnly) assert.equal(voice[id][s], undefined, `${id}.${s} is not planned by default`);
     walk(voice[id]);
   }
-  assert.ok(lines.length >= 2000, `${lines.length} voice lines`);
+  // a battle slot usually carries several lines (选中干员 / 部署 have two), so the battle set alone stays well above 10 each
+  assert.ok(lines.length >= charIds.length * 10, `${lines.length} voice lines for ${charIds.length} operators`);
   for (const u of lines) assert.match(u, /^\/assets\/audio\/voice\/cn\/char_[^/]+\/cn_\d+\.mp3$/);
   // the official scheduling numbers (audio_data.json battleVoice.voiceTypeOptions)
   assert.equal(VOICE_PRIORITY.start, 100);

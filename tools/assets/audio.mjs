@@ -299,14 +299,36 @@ export const VOICE_SLOTS = Object.freeze({
 });
 
 /**
+ * The slots a running battle can actually request — the only ones `public/js/audio.js` ever asks for (the 休整期 is
+ * silent, so nothing else is played): 行动出发 start, 首次接敌 faceEnemy, 作战中1-4 skillN, 部署 place (the deploy
+ * events) and 选中干员 select (the detail panel, behind its combat flag), plus the settlement lines
+ * resultFour / resultThree / resultTwo / resultLose (public/js/screens/game.js onResult).
+ * `buildPlan` plans these by default; `--voice-all` widens it to every slot of VOICE_SLOTS.
+ */
+export const VOICE_BATTLE_SLOTS = Object.freeze(['start', 'faceEnemy', 'select', 'place',
+  'skill1', 'skill2', 'skill3', 'skill4', 'resultFour', 'resultThree', 'resultTwo', 'resultLose']);
+
+/**
+ * Slots no battle plays: the lines the official client uses in its own 养成 / 编队 UI (干员报到 gacha, 编入队伍 squad,
+ * 任命队长 squadFirst). `test/docs-consistency.test.js` proves the client never asks for one, so planning them only
+ * makes every `npm run assets` download 360 files (19.3 MB, CN dub) that no player will ever hear — they are left out
+ * unless `--voice-all` is passed. 部署 `place` and 选中干员 `select` deliberately stay in: the official client groups
+ * them with the prep lines, but a battle does play them (the deploy events; the detail panel behind its combat flag).
+ */
+export const VOICE_PREP_SLOTS = Object.freeze(['gacha', 'squad', 'squadFirst']);
+
+/**
  * Index charword_table.json into per-character voice slots, in voiceIndex order (one slot may have several lines).
  * Only the base word key (`wordKey === charId`) is used: the dump has no folder for a skin variant's word key
  * (`char_x_ita`, `char_x_epoque#28`, …) — those files simply do not exist upstream.
  * @param {any} charword parsed excel/charword_table.json
  * @param {string} [lang] voiceId prefix — the zh_CN table carries the `CN_*` lines; the other dubs share the numbering
+ * @param {Iterable<string>|null} [only] slot names to keep; null/omitted keeps every slot (VOICE_BATTLE_SLOTS is what
+ *   the plan uses by default, so a battle's own lines are planned and the prep-only ones are not)
  * @returns {Map<string, Record<string, string[]>>} charId → slot → voiceAsset ('char_263_skadi/CN_023')
  */
-export function indexVoice(charword, lang = 'CN') {
+export function indexVoice(charword, lang = 'CN', only = null) {
+  const keep = only ? new Set(only) : null;
   const out = new Map();
   const words = charword?.charWords;
   if (!words || typeof words !== 'object') return out;
@@ -315,7 +337,7 @@ export function indexVoice(charword, lang = 'CN') {
   for (const e of Object.values(words)) {
     if (!e || typeof e !== 'object') continue;
     const charId = e.charId, slot = VOICE_SLOTS[e.placeType], vid = e.voiceId;
-    if (!charId || !slot || typeof vid !== 'string' || !vid.startsWith(`${lang}_`)) continue;
+    if (!charId || !slot || (keep && !keep.has(slot)) || typeof vid !== 'string' || !vid.startsWith(`${lang}_`)) continue;
     if (e.wordKey !== charId) continue;
     if (typeof e.voiceAsset !== 'string' || !e.voiceAsset) continue;
     if (!seen.has(charId)) seen.set(charId, new Map());

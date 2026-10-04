@@ -20,7 +20,7 @@
 
 import { RAW, joinUrl, safeName, urlBase, urlDir } from './sources.mjs';
 import { kindOf } from './formats.mjs';
-import { pickUnitSfx, UI_SFX, BATTLE_SFX, resolveSpec, indexVoice, VOICE_DIRS } from './audio.mjs';
+import { pickUnitSfx, UI_SFX, BATTLE_SFX, resolveSpec, indexVoice, VOICE_DIRS, VOICE_BATTLE_SLOTS } from './audio.mjs';
 import { literal } from './manifest.mjs';
 import { EMOTE_CATALOG } from '../../shared/constants.js';
 
@@ -267,6 +267,9 @@ export function collectEnemyIds({ assets07, enemies05, maps05, ops03 }) {
  * @param {any} p.modelsData Ark-Models models_data.json
  * @param {any} [p.charword] parsed excel/charword_table.json — the operators' official voice slots (voice)
  * @param {string} [p.voiceLang] voice dump to plan: cn (default) | jp | en | kr
+ * @param {Iterable<string>|null} [p.voiceSlots] which voice slots to plan: VOICE_BATTLE_SLOTS (default) plans only the
+ *   lines a battle can play, null plans every slot of audio.mjs VOICE_SLOTS (`--voice-all`). The prep-only slots
+ *   (干员报到 / 编入队伍 / 任命队长) are never requested by the client and cost 360 files / 19.3 MB of downloads.
  * @param {string[]} [p.extraEnemyIds] more enemy ids that can spawn (e.g. keys of data/enemies.json)
  * @param {string[]} [p.extraTokenIds] more token ids (e.g. token_* keys of data/tokens.json)
  * @param {Record<string,string>} [p.extraHandbook] enemyId → handbook/model id (e.g. from data/bosses.json)
@@ -276,6 +279,7 @@ export function collectEnemyIds({ assets07, enemies05, maps05, ops03 }) {
  * @returns {{ template: any, models: Map<string, any>, notes: string[] }}
  */
 export function buildPlan({ assets07, ops03, enemies05, maps05, audio, modelsData, charword = null, voiceLang = 'cn',
+  voiceSlots = VOICE_BATTLE_SLOTS,
   extraEnemyIds = [], extraTokenIds = [], extraHandbook = {}, localEnemySpines = {} }) {
   const notes = [];
   /** @type {Map<string, any>} */
@@ -551,13 +555,16 @@ export function buildPlan({ assets07, ops03, enemies05, maps05, audio, modelsDat
   for (const [name, spec] of Object.entries(BATTLE_SFX)) { const l = soundLeaf(resolveSpec(spec, audio.bank)); if (l) sfxBattle[name] = l; else notes.push(`battle SFX ${name}: no sound`); }
 
   // --- 干员战斗语音 (excel/charword_table.json → audio.voice) ---------------------------------------------
-  // The official battle lines of every operator the mode can field: 行动出发 start / 行动开始 faceEnemy / 选中干员
-  // select / 部署 place / 作战中1-4 skillN / 编入队伍 squad / 任命队长 squadFirst / 结算 result* / 干员报到 gacha
-  // (charword `placeType`, audio.mjs VOICE_SLOTS). A slot with several lines stays an array — the client draws one
-  // at random (public/js/audio.js voice). Operators without official battle voice keep no entry at all: the 17
-  // 预备干员 (char_60x_c*, char_617_sharp2) and the mode's own 盟约·辅助干员 (char_616_pithst).
+  // The official lines of every operator the mode can field, for the slots a battle can actually play: 行动出发 start /
+  // 行动开始 faceEnemy / 选中干员 select / 部署 place / 作战中1-4 skillN / 结算 result* (charword `placeType`,
+  // audio.mjs VOICE_BATTLE_SLOTS). A slot with several lines stays an array — the client draws one at random
+  // (public/js/audio.js voice). Operators without official battle voice keep no entry at all: the 17 预备干员
+  // (char_60x_c*, char_617_sharp2) and the mode's own 盟约·辅助干员 (char_616_pithst).
+  // The three prep-only slots (干员报到 gacha / 编入队伍 squad / 任命队长 squadFirst) are NOT planned by default: the
+  // client never requests them, and downloading them adds 360 files / 19.3 MB to every `npm run assets` — pass --voice-all for
+  // the complete official set (`voiceSlots: null`, reviewer note on the voice PR).
   const voice = {};
-  for (const [charId, slots] of indexVoice(charword, VOICE_ID_LANG)) {
+  for (const [charId, slots] of indexVoice(charword, VOICE_ID_LANG, voiceSlots)) {
     if (!chars[charId]) continue;            // only the operators this game can field (the 138-pool charIds)
     const v = {};
     for (const [slot, assets] of Object.entries(slots)) {
