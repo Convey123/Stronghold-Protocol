@@ -234,7 +234,9 @@ export function unitGain(base, mix) {
 export function unitSoundPlays(mix, roll) {
   const p = mix && Number(mix.p);
   return !(Number.isFinite(p) && p >= 0 && p < 1) || roll < p;
+}
 
+/**
  * Voice priorities — the official battle voice types (`audio_data.json battleVoice.voiceTypeOptions`) mapped onto the
  * manifest's slots: BATTLE_START 100, BATTLE_FACE_ENEMY 90, SKILL_ACTIVE 70, PASSIVE_IMP 60, PASSIVE_NOR 50,
  * PLACE_CHAR 20, FOCUS_CHAR 10. The settlement lines are no battle voice of the official scheduler: they sit at 85,
