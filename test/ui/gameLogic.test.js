@@ -9,7 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   phaseMode, phaseBanner, isCombatPhase, isBossPhase, countdownState, phaseTotalSeconds, sortBonds, bondTier, nextThreshold,
-  battleOverSfx, uniteResultBox, battleResultBox, roundResultBox, RESULT_BOX_MS,
+  battleOverSfx, ownRoundLoss, uniteResultBox, battleResultBox, roundResultBox, RESULT_BOX_MS,
   bondMembers, memberHeadCount, bannedPerBond, priceTone, mergeProgress, shopBlockReason, deploySets, indexPieces, placementContext, canPlace,
   boardTargets, dropIntent, normalizeDraft, normalizeSp, groupEnemies, factionTypes, snapHud, bossFrac, attackInterval, fmtNum,
   rangeGridBox, shortcutFor, sanitizeSettings, DEFAULT_SETTINGS, normalizeResult, cycleField, fieldLabel, homeFieldId,
@@ -75,11 +75,34 @@ describe('phases', () => {
   });
   test('战斗结束 SFX: the official BATTLEOVER_* variant for the round', () => {
     // 掉血 → _REDUCE；联防拦下全部（不扣血）→ _NOREDUCE；普通回合 → _NORMAL；本回合没打过（观战 / 重连落在结算）→ 不响
-    assert.equal(battleOverSfx({ pending: 3, unite: false }), 'battleOverReduce');
-    assert.equal(battleOverSfx({ pending: 1, unite: true }), 'battleOverReduce');
-    assert.equal(battleOverSfx({ pending: 0, unite: true }), 'battleOverNoReduce');
-    assert.equal(battleOverSfx({ pending: 0, unite: false }), 'battleOverNormal');
+    // `cost` is what screens/game.js roundLossRef actually keeps — { round, leaks, cap, unite }. It has NO `pending`,
+    // so these must be built from `leaks`/`cap`; a `pending` the object never carries is how the Reduce variant used to
+    // be dead code (review on PR #112: "battleOverSfx 读的是 cost.pending，但 roundLossRef 里没有这个字段").
+    const cost = (o) => ({ round: 3, leaks: 0, cap: 10, unite: false, ...o });
+    assert.equal(battleOverSfx(cost({ leaks: 3 })), 'battleOverReduce');
+    assert.equal(battleOverSfx(cost({ leaks: 1, unite: true })), 'battleOverReduce');
+    assert.equal(battleOverSfx(cost({ unite: true })), 'battleOverNoReduce');
+    assert.equal(battleOverSfx(cost({})), 'battleOverNormal');
+    // the cap bounds it, exactly like settlement's charge (leaks 14 with cap 10 is still a loss)
+    assert.equal(battleOverSfx(cost({ leaks: 14, cap: 10 })), 'battleOverReduce');
+    assert.equal(battleOverSfx(cost({ leaks: 14 })), 'battleOverReduce', 'no cap known → the official 10');
+    // a 联防 round: the authority's own charge decides, not this player's own battle leaks — a leaker whose enemies
+    // the helpers stopped paid 0 and hears NoReduce, even though their own battle leaked
+    assert.equal(battleOverSfx(cost({ leaks: 3, unite: true }), 0), 'battleOverNoReduce');
+    assert.equal(battleOverSfx(cost({ leaks: 3, unite: true }), 3), 'battleOverReduce');
+    assert.equal(battleOverSfx(cost({ leaks: 0, unite: true }), 2), 'battleOverReduce');
+    assert.equal(battleOverSfx(cost({ leaks: 2, unite: true }), null), 'battleOverReduce', 'no 联防 figure → the own battle decides');
+    // never seen this round's battle (a spectator, a reconnect landing on SETTLE)
     assert.equal(battleOverSfx(null), null);
+    assert.equal(battleOverSfx(undefined, 0), null);
+  });
+  test('ownRoundLoss: min(cap, leaks) — the same figure the box shows', () => {
+    assert.equal(ownRoundLoss({ leaks: 3, cap: 10 }), 3);
+    assert.equal(ownRoundLoss({ leaks: 14, cap: 10 }), 10);
+    assert.equal(ownRoundLoss({ leaks: 14 }), 10);
+    assert.equal(ownRoundLoss({ leaks: 0 }), 0);
+    assert.equal(ownRoundLoss(null), null);
+    assert.equal(ownRoundLoss({ cap: 10 }), null, 'no leaks seen → no figure at all');
   });
   test('联防 result box: the 联防 verdict for every participant, the viewer\'s own LP beside it', () => {
     const res = { through: 3, helpers: ['p_1', 'p_2'], leakers: ['p_0'], losses: { p_0: 3, p_1: 0, p_2: 0 } };
@@ -97,11 +120,13 @@ describe('phases', () => {
     // nothing got through: the verdict is the same for helper and leaker (the official 全员无伤！ for both, neither charged)
     const cleared = { through: 0, helpers: ['p_1', 'p_2'], leakers: ['p_0'], losses: { p_0: 0, p_1: 0, p_2: 0 } };
     assert.deepEqual(uniteResultBox(cleared, 'p_0'), uniteResultBox(cleared, 'p_1'));
-    assert.equal(uniteResultBox(cleared, 'p_0').sub, '全员无伤！ · 联防成功');
+    assert.equal(uniteResultBox(cleared, 'p_0').sub, '联防成功 · 全员无伤！', 'the verdict leads both ways');
     assert.equal(uniteResultBox(cleared, 'p_0').tone, 'mint');
-    // a player the server never charged (eliminated, or a spectator) lost nothing
-    assert.equal(uniteResultBox(res, 'nobody').sub, '联防失败：还有 3 只突破防线 · 全员无伤！');
-    assert.equal(uniteResultBox(res, undefined).sub, '联防失败：还有 3 只突破防线 · 全员无伤！');
+    // a spectator (and an eliminated teammate) is not in `losses` and must NOT be told 全员无伤！ — that claims a round
+    // they never fought or paid for (review on PR #112); they get the verdict alone
+    assert.equal(uniteResultBox(res, 'nobody').sub, '联防失败：还有 3 只突破防线');
+    assert.equal(uniteResultBox(res, undefined).sub, '联防失败：还有 3 只突破防线');
+    assert.equal(uniteResultBox(cleared, 'nobody').sub, '联防成功', 'and the held verdict alone on a good 联防');
     // no 联防 this round: no box at all, the own battle's takes over
     assert.equal(uniteResultBox(null, 'p_0'), null);
     assert.equal(uniteResultBox(undefined, 'p_0'), null);

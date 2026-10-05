@@ -179,17 +179,43 @@ export function phaseBanner(phase, pub) {
 }
 
 /**
+ * What this round's own battle cost the viewer: `min(cap, leaks)`, exactly what settlement charges and what the result
+ * box shows. `cost` is what `screens/game.js roundLossRef` kept while the battle ran — `leaks` = counted enemies that
+ * got through (the highest the round showed, so a settlement landing mid-render cannot wipe it), `cap` = the round's LP
+ * cap. Both the 战斗结束 sound and the result box read the loss from here.
+ * @param {{ leaks?: number, cap?: number } | null} cost
+ * @returns {number|null} null when this round's battle was never seen (a spectator, or a reconnect that lands on SETTLE)
+ */
+export function ownRoundLoss(cost) {
+  if (!cost) return null;
+  const leaks = Number.isFinite(cost.leaks) ? Math.max(0, Math.trunc(cost.leaks)) : null;
+  if (leaks == null) return null;
+  const cap = Number.isFinite(cost.cap) && cost.cap > 0 ? Math.trunc(cost.cap) : 10; // no cap known → the official 10
+  return Math.min(cap, leaks);
+}
+
+/**
  * 战斗结束 (the official `BATTLEOVER_*` sounds; all three are in the manifest's `audio.sfx.ui`): `battleOverReduce`
  * when the round's battle cost LP, `battleOverNoReduce` when a 联防 ran and nothing got through, `battleOverNormal`
  * otherwise — and null when this round's battle was never seen (a spectator, or a reconnect that lands on SETTLE).
  * The client data names the three variants but not their triggers, so this mapping is [ASSUMED]; the official plays
  * them as the settlement lands, which is where `screens/game.js` calls this.
- * @param {{ pending: number, unite: boolean } | null} cost the round's own battle cost, as it was shown while it ran
+ *
+ * The LP is read from `cost` (see `ownRoundLoss` — `roundLossRef` carries `leaks`/`cap`, never a `pending`) unless the
+ * settlement view hands over the authority's own per-player charge for a 联防 round (`uniteLoss`, `uniteResult.losses`),
+ * which is the figure actually deducted: a leaker whose enemies the helpers stopped pays 0 and must hear
+ * `NoReduce`, not `Reduce`.
+ * @param {{ leaks?: number, cap?: number, unite?: boolean } | null} cost the round's own battle cost, as it was shown while it ran
+ * @param {number|null} [uniteLoss] the authority's charge for the viewer this round (pub.uniteResult.losses), when a 联防 resolved
  * @returns {'battleOverReduce'|'battleOverNoReduce'|'battleOverNormal'|null}
  */
-export function battleOverSfx(cost) {
+export function battleOverSfx(cost, uniteLoss = null) {
   if (!cost) return null;
-  if (Number(cost.pending) > 0) return 'battleOverReduce';
+  // `uniteLoss == null` (not `Number(null)`, which is 0!) means "no 联防 figure" — only a real number is authoritative
+  const authority = uniteLoss == null ? NaN : Number(uniteLoss);
+  const loss = Number.isFinite(authority) ? Math.max(0, Math.trunc(authority)) : ownRoundLoss(cost);
+  if (loss == null) return null;
+  if (loss > 0) return 'battleOverReduce';
   return cost.unite ? 'battleOverNoReduce' : 'battleOverNormal';
 }
 
@@ -235,11 +261,11 @@ export function uniteResultBox(res, selfId) {
   const through = Number(res?.through);
   if (!Number.isFinite(through) || through < 0) return null;
   const losses = res?.losses && typeof res.losses === 'object' ? res.losses : null;
-  const raw = losses ? Number(losses[selfId]) : NaN;
-  // `losses` lists every player the round charged, so a missing key (eliminated, or a spectator) means this viewer lost
-  // nothing — while a view that carries no `losses` at all knows nothing and must make no LP claim.
-  const loss = losses ? (Number.isFinite(raw) ? Math.max(0, Math.trunc(raw)) : 0) : null;
-  // "全员无伤！" is the official reading of a round that cost the viewer nothing; the LP is never guessed
+  const raw = losses && Object.hasOwn(losses, selfId) ? Number(losses[selfId]) : NaN;
+  // Only the players `losses` actually lists were charged, so only they get an LP line. A spectator (and an eliminated
+  // teammate) is not in it and must NOT be told "全员无伤！" — that is a claim about a round they never paid for; they
+  // get the verdict alone.
+  const loss = Number.isFinite(raw) ? Math.max(0, Math.trunc(raw)) : null;
   const own = loss == null ? null : (loss === 0 ? '全员无伤！' : `生命值减少 −${loss}`);
   const joint = through === 0 ? '联防成功' : `联防失败：还有 ${through} 只突破防线`;
   return {
@@ -247,7 +273,8 @@ export function uniteResultBox(res, selfId) {
     micro: 'BATTLE OVER',
     // mint: the 联防 held. red: it did not and it cost this player. orange: it did not, but this player was spared.
     tone: through === 0 ? 'mint' : (loss ? 'red' : 'orange'),
-    sub: through === 0 && own ? `${own} · ${joint}` : (own ? `${joint} · ${own}` : joint),
+    // the verdict leads both ways (helper: 联防成功 · 全员无伤！), so it reads the same whichever way the round went
+    sub: own ? `${joint} · ${own}` : joint,
     duration: RESULT_BOX_MS,
   };
 }
@@ -255,19 +282,14 @@ export function uniteResultBox(res, selfId) {
 /**
  * The own battle's result box, shown at settlement when no 联防 resolved ("每一把结束以后都有一个成功"): the official
  * announces every battle's outcome. `cost` is what this round's own battle was last seen to cost, captured while it ran
- * (screens/game.js `roundLossRef`) — `leaks` = counted enemies that got through (the highest the round showed, so the
- * settlement landing mid-render can never wipe it), `cap` = the round's LP cap (gd.config.lpCapPerRound). The LP figure
- * is derived from the two (min(cap, leaks), exactly what settlement charges) rather than read from the live pending
- * value, which is 0 again by the time SETTLE renders.
+ * (screens/game.js `roundLossRef`); the LP figure comes from `ownRoundLoss` (`min(cap, leaks)`, exactly what settlement
+ * charges) rather than from the live pending value, which is 0 again by the time SETTLE renders.
  * @param {{ leaks?: number, cap?: number } | null} cost
  * @returns {{ title: string, micro: string, tone: string, sub: string, duration: number } | null} null without a battle
  */
 export function battleResultBox(cost) {
-  if (!cost) return null;
-  const leaks = Number.isFinite(cost.leaks) ? Math.max(0, Math.trunc(cost.leaks)) : null;
-  if (leaks == null) return null;
-  const cap = Number.isFinite(cost.cap) && cost.cap > 0 ? Math.trunc(cost.cap) : 10;
-  return roundResultBox(Math.min(cap, leaks));
+  const loss = ownRoundLoss(cost);
+  return loss == null ? null : roundResultBox(loss);
 }
 
 /** Label of the prep capsule ("休息一下" in the original). */

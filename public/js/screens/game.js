@@ -597,10 +597,15 @@ function MatchScreen() {
     else if (phase === PHASE.HIDDEN_CORE) audio.sfx('bossRoundSecret');
     else if (phase === PHASE.SP_DRAFT) audio.sfx('draft');
     else if (phase === PHASE.SETTLE) {
-      // 战斗结束: the official BATTLEOVER_* variants, picked from the round's own battle cost (ui/gameLogic.battleOverSfx)
+      // 战斗结束: the official BATTLEOVER_* variants, picked from the LP the round actually cost (ui/gameLogic.battleOverSfx)
       const cost = roundLossRef.current;
       roundLossRef.current = null;
-      const key = battleOverSfx(cost);
+      // the LP this round cost THIS player: a 联防 round has the authority's own per-player charge in the SETTLE view
+      // (pub.uniteResult.losses, Match.settle) — a leaker whose enemies the helpers stopped paid 0 and must hear
+      // NoReduce — while any other round falls back to the own battle's cost (gameLogic ownRoundLoss: min(cap, leaks)).
+      // `roundLossRef` carries { round, leaks, cap, unite }: it has no `pending`, which is why that was never read.
+      const uniteLoss = pub?.uniteResult?.losses?.[myId];
+      const key = battleOverSfx(cost, uniteLoss);
       if (key) audio.sfx(key);
       // and the result box the official pops up when the fight resolves (user request: "跳一个大框出来"): the 联防's own
       // outcome first — each player's own LP charge, so helper and leaker read their own loss (ui/gameLogic.uniteResultBox)

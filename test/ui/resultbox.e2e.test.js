@@ -5,7 +5,7 @@
 // The box wears the official dialog's title (作战结束, user request "选择官方文案") and, in a 联防 round, leads its sub with
 // the 联防's own verdict so every participant can see whether it held (user request "根据联防结果跳大框"), followed by the
 // LP the viewer was charged. Asserted: `?phase=SETTLE&variant=unite` pops it for a leaker the helpers saved (losses.p1 = 0
-// → 全员无伤！· 联防成功) and `unite,through` for the same leaker charged 3 (→ 联防失败：还有 3 只突破防线 · 生命值减少
+// → 联防成功 · 全员无伤！) and `unite,through` for the same leaker charged 3 (→ 联防失败：还有 3 只突破防线 · 生命值减少
 // −3, NOT the helpers' 0 and not this leaker's own pre-union leak count), driving the harness' own COMBAT → SETTLE
 // switcher pops the round's own battle's box, the box is centred and click-through, it closes by itself (and really leaves
 // the DOM), and no scenario logs a console error. The words themselves are unit-tested in test/ui/gameLogic.test.js
@@ -79,13 +79,13 @@ describe('settlement result box in the browser', { skip: !ENABLED && 'set SP_E2E
     };
   });
 
-  test('the official dialog: 作战结束 + 全员无伤！ for the helper, 生命值减少 −3 for the leaker', async () => {
+  test('the official dialog: 作战结束 + the 联防 verdict first, then this player\'s own LP', async () => {
     const { page, problems } = await open('/dev/game-mock.html?shot=1&render=fallback&phase=SETTLE&variant=unite');
     await page.waitForSelector('.rdialog', { timeout: 10000 });
     const ok = await boxState(page);
     // the mock's local player is p1, a leaker whose enemies the helpers all stopped → charged nothing (losses.p1 = 0)
     assert.match(ok.title, /^作战结束$/, JSON.stringify(ok));
-    assert.equal(ok.sub, '全员无伤！ · 联防成功');
+    assert.equal(ok.sub, '联防成功 · 全员无伤！', 'the verdict leads, then this player\'s own LP');
     assert.match(ok.micro, /BATTLE OVER/);
     assert.ok(ok.classes.includes('rdialog--mint'), `the held tone: ${ok.classes}`);
     assert.equal(ok.chevrons, 2); assert.equal(ok.ticks, 4);
