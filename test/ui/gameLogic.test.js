@@ -104,40 +104,44 @@ describe('phases', () => {
     assert.equal(ownRoundLoss(null), null);
     assert.equal(ownRoundLoss({ cap: 10 }), null, 'no leaks seen → no figure at all');
   });
-  test('联防 result box: the 联防 verdict for every participant, the viewer\'s own LP beside it', () => {
+  test('联防 result box: the official words for the viewer\'s own LP, nothing else', () => {
     const res = { through: 3, helpers: ['p_1', 'p_2'], leakers: ['p_0'], losses: { p_0: 3, p_1: 0, p_2: 0 } };
-    // the helper was spared, but must still learn the 联防 FAILED — otherwise a helper reads the same thing on success
+    // the helper was spared → the official 全员无伤！ and ONLY that: the remake's own 「联防失败：还有 N 只突破防线」 is
+    // not in the official dialog (review on #112), and the escaped count is on the HUD's tag_miss capsule instead
     const helper = uniteResultBox(res, 'p_1');
     assert.equal(helper.title, '作战结束');
     assert.equal(helper.tone, 'orange', 'it failed but this player was spared');
-    assert.equal(helper.sub, '联防失败：还有 3 只突破防线 · 全员无伤！');
-    assert.ok(helper.duration > 1500, 'it holds long enough to read');
-    // the leaker reads the same verdict first, then the LP settlement actually charged
+    assert.equal(helper.sub, '全员无伤！');
+    // the leaker reads the LP settlement actually charged
     const leaker = uniteResultBox(res, 'p_0');
     assert.equal(leaker.title, '作战结束');
     assert.equal(leaker.tone, 'red');
-    assert.equal(leaker.sub, '联防失败：还有 3 只突破防线 · 生命值减少 −3');
-    // nothing got through: the verdict is the same for helper and leaker (the official 全员无伤！ for both, neither charged)
+    assert.equal(leaker.sub, '生命值减少 −3');
+    // nothing got through: the official 全员无伤！ for helper and leaker alike (neither was charged)
     const cleared = { through: 0, helpers: ['p_1', 'p_2'], leakers: ['p_0'], losses: { p_0: 0, p_1: 0, p_2: 0 } };
     assert.deepEqual(uniteResultBox(cleared, 'p_0'), uniteResultBox(cleared, 'p_1'));
-    assert.equal(uniteResultBox(cleared, 'p_0').sub, '联防成功 · 全员无伤！', 'the verdict leads both ways');
+    assert.equal(uniteResultBox(cleared, 'p_0').sub, '全员无伤！');
     assert.equal(uniteResultBox(cleared, 'p_0').tone, 'mint');
-    // a spectator (and an eliminated teammate) is not in `losses` and must NOT be told 全员无伤！ — that claims a round
-    // they never fought or paid for (review on PR #112); they get the verdict alone
-    assert.equal(uniteResultBox(res, 'nobody').sub, '联防失败：还有 3 只突破防线');
-    assert.equal(uniteResultBox(res, undefined).sub, '联防失败：还有 3 只突破防线');
-    assert.equal(uniteResultBox(cleared, 'nobody').sub, '联防成功', 'and the held verdict alone on a good 联防');
+    // word for word an ordinary round's box — a 联防 only changes where the number comes from (the authority's `losses`)
+    assert.deepEqual(uniteResultBox(res, 'p_0'), roundResultBox(3));
+    assert.deepEqual(uniteResultBox(cleared, 'p_0'), roundResultBox(0));
+    // a spectator (an already-eliminated player) is not in `losses` and must NOT be told 全员无伤！ — that claims a round
+    // they never fought or paid for (review on #112); with the verdict line gone they get the official title alone
+    assert.equal(uniteResultBox(res, 'nobody').sub, '');
+    assert.equal(uniteResultBox(res, undefined).sub, '');
+    assert.equal(uniteResultBox(cleared, 'nobody').sub, '');
+    assert.equal(uniteResultBox(cleared, 'nobody').title, '作战结束', 'still the official dialog');
     // no 联防 this round: no box at all, the own battle's takes over
     assert.equal(uniteResultBox(null, 'p_0'), null);
     assert.equal(uniteResultBox(undefined, 'p_0'), null);
     assert.equal(uniteResultBox({}, 'p_0'), null);
     assert.equal(uniteResultBox({ through: -1 }, 'p_0'), null);
-    // a server that predates `losses` still gets the verdict — and never the own battle's box, which would bill this
+    // a server that predates `losses` gets no LP claim either — and never the own battle's box, which would bill this
     // player for leaks the 联防 removed (the half-deployed-server bug: 作战结束 + the player's own leak count)
     const noLosses = uniteResultBox({ through: 3, helpers: ['p_1'], leakers: ['p_0'] }, 'p_0');
-    assert.equal(noLosses.sub, '联防失败：还有 3 只突破防线', 'the verdict without an LP claim');
+    assert.equal(noLosses.sub, '', 'no LP known → no LP claim');
     assert.equal(noLosses.tone, 'orange', 'no LP known → not read as a loss');
-    assert.equal(uniteResultBox({ through: 0, helpers: ['p_1'], leakers: ['p_0'] }, 'p_1').sub, '联防成功');
+    assert.equal(uniteResultBox({ through: 0, helpers: ['p_1'], leakers: ['p_0'] }, 'p_1').sub, '');
   });
   test('round result box: the official text, mint without a loss and red with one', () => {
     assert.deepEqual(roundResultBox(0), { title: '作战结束', micro: 'BATTLE OVER', tone: 'mint', sub: '全员无伤！', duration: RESULT_BOX_MS });

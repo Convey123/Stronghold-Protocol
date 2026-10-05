@@ -607,10 +607,11 @@ function MatchScreen() {
       const uniteLoss = pub?.uniteResult?.losses?.[myId];
       const key = battleOverSfx(cost, uniteLoss);
       if (key) audio.sfx(key);
-      // and the result box the official pops up when the fight resolves (user request: "跳一个大框出来"): the 联防's own
-      // outcome first — each player's own LP charge, so helper and leaker read their own loss (ui/gameLogic.uniteResultBox)
-      // — else this round's own battle ("每一把结束以后都有一个成功", battleResultBox). Both print the official dialog's
-      // own words: 作战结束 + 全员无伤！ / 生命值减少 −N (user request: "选择官方文案").
+      // and the result box the official pops up when the fight resolves (user request: "跳一个大框出来"): in a 联防 round
+      // each player's own LP charge comes from the authority (ui/gameLogic.uniteResultBox), so helper and leaker read
+      // their own loss — else this round's own battle ("每一把结束以后都有一个成功", battleResultBox). Both print the
+      // official dialog's own words and nothing else: 作战结束 + 全员无伤！ / 生命值减少 −N (user requests "选择官方文案",
+      // and on review "官方对话框里没有…尽量只用官方文案" → the remake's own 联防 verdict line was dropped).
       const box = uniteResultBox(pub?.uniteResult, myId) || battleResultBox(cost);
       if (box) setResultBox({ ...box, key: `result:${pub?.round}:${prev}` });
     }

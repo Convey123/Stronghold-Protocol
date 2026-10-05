@@ -240,19 +240,23 @@ export function roundResultBox(loss) {
 }
 
 /**
- * The 联防 round's result box (user request: "跳一个大框出来，然后提示联防成功"): the official dialog's title **作战结束**
- * with the 联防's own outcome in the sub, so EVERY participant reads the same verdict — the helper who lost nothing and
- * the leaker who paid both see whether the joint defence held (user request: "根据联防结果跳大框"; without it a helper
- * sees 全员无伤！ whether the 联防 succeeded or failed, since the official dialog only ever reports one's own LP).
+ * The 联防 round's result box (user request: "跳一个大框出来"): the official dialog's title **作战结束** with the
+ * viewer's OWN LP line — the same words `roundResultBox` uses, in the same dialog.
  *
- * Built from `pub.uniteResult`, the outcome the server carries in its SETTLE view (Match.settle):
- * - `through` — the leaked enemies that still got through, the authority's own count, identical for everybody →
- *   「联防成功」 / 「联防失败：还有 N 只突破防线」.
- * - `losses[selfId]` — the viewer's OWN LP charge for the round, the same number settlement deducts → 「全员无伤！」 /
- *   「生命值减少 −N」, exactly as the official dialog does it per player.
- * A view without `losses` (a server that predates it) still shows the 联防 verdict from `through`, and deliberately does
- * NOT fall back to the own battle's box: in a 联防 round that box would read the viewer's own pre-union leaks as a loss
- * they were never charged, which is the bug this guards against.
+ * It exists as its own function because the client cannot derive that number itself: in a 联防 the charge falls on
+ * `plan.leakers` only (Match.settle), so a leaker must not read their own pre-union leaks as a loss and a helper must
+ * not inherit the leaker's. `pub.uniteResult.losses[selfId]` is the authority's figure — the very `loss` settlement
+ * deducts — so the box and the LP bar can never disagree.
+ *
+ * The remake's own 「联防成功」 / 「联防失败：还有 N 只突破防线」 verdict line was dropped in review ("官方对话框里没
+ * 有…我们这边尽量只用官方文案"): the official dialog reports nothing but one's own target health, and how many got
+ * through is already on the HUD's `tag_miss` capsule (§20.6) and in the 联防阶段 banner. `through` therefore only
+ * tints the box now, it is no longer printed.
+ *
+ * A viewer `losses` does not list (a player who was eliminated earlier and is only watching) gets NO LP line — the box
+ * is the title alone, never a claim about a round they were not part of. A view without `losses` at all (a server
+ * predating it) is read the same way, and deliberately does NOT fall back to the own battle's box: in a 联防 round that
+ * box would bill this player for leaks the 联防 removed, which is the bug this guards against.
  * @param {{ through?: number, helpers?: string[], losses?: Record<string, number> } | null | undefined} res pub.uniteResult
  * @param {string|null|undefined} selfId the viewer's playerId
  * @returns {{ title: string, micro: string, tone: string, sub: string, duration: number } | null} null when no 联防 resolved
@@ -262,19 +266,14 @@ export function uniteResultBox(res, selfId) {
   if (!Number.isFinite(through) || through < 0) return null;
   const losses = res?.losses && typeof res.losses === 'object' ? res.losses : null;
   const raw = losses && Object.hasOwn(losses, selfId) ? Number(losses[selfId]) : NaN;
-  // Only the players `losses` actually lists were charged, so only they get an LP line. A spectator (and an eliminated
-  // teammate) is not in it and must NOT be told "全员无伤！" — that is a claim about a round they never paid for; they
-  // get the verdict alone.
   const loss = Number.isFinite(raw) ? Math.max(0, Math.trunc(raw)) : null;
-  const own = loss == null ? null : (loss === 0 ? '全员无伤！' : `生命值减少 −${loss}`);
-  const joint = through === 0 ? '联防成功' : `联防失败：还有 ${through} 只突破防线`;
   return {
     title: '作战结束',
     micro: 'BATTLE OVER',
     // mint: the 联防 held. red: it did not and it cost this player. orange: it did not, but this player was spared.
     tone: through === 0 ? 'mint' : (loss ? 'red' : 'orange'),
-    // the verdict leads both ways (helper: 联防成功 · 全员无伤！), so it reads the same whichever way the round went
-    sub: own ? `${joint} · ${own}` : joint,
+    // official words only, and only for a player the authority actually charged: 全员无伤！ / 生命值减少 −N
+    sub: loss == null ? '' : (loss === 0 ? '全员无伤！' : `生命值减少 −${loss}`),
     duration: RESULT_BOX_MS,
   };
 }
