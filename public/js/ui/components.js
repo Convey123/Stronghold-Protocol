@@ -731,11 +731,11 @@ export function PhaseBanner({ title, sub, micro, tone = 'mint', mode = 'inline',
 }
 
 /**
- * Big centred result box (the official's 联防/作战 result pop-up: user request "跳一个大框出来，然后提示联防成功").
- * A framed panel — tone-coloured frame and corner ticks, chevrons left and right of the title — that wipes open from
- * the middle, holds `duration` ms and closes by itself. Purely presentational: gameLogic.uniteResultBox /
- * battleResultBox decide the words, screens/game.js decides when. `pointer-events: none`, so it never eats a click
- * during settlement.
+ * Big centred result box (the official's round result dialog: user request "跳一个大框出来", its words the official's own
+ * on the follow-up "选择官方文案"). A framed panel — tone-coloured frame and corner ticks, chevrons left and right of the
+ * title — that wipes open from the middle, holds `duration` ms and closes by itself. Purely presentational:
+ * gameLogic.roundResultBox (via uniteResultBox / battleResultBox) decides the words, screens/game.js decides when.
+ * `pointer-events: none`, so it never eats a click during settlement.
  * @param {{ title: any, sub?: any, micro?: string, tone?: 'mint'|'orange'|'red'|'gold'|'ice', duration?: number,
  *   onDone?: Function, icon?: any, class?: string }} props duration (ms) > 0 auto-hides then calls onDone. Re-key to replay.
  */

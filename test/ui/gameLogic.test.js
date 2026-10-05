@@ -9,7 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   phaseMode, phaseBanner, isCombatPhase, isBossPhase, countdownState, phaseTotalSeconds, sortBonds, bondTier, nextThreshold,
-  battleOverSfx, uniteResultBox, battleResultBox,
+  battleOverSfx, uniteResultBox, battleResultBox, roundResultBox, RESULT_BOX_MS,
   bondMembers, memberHeadCount, bannedPerBond, priceTone, mergeProgress, shopBlockReason, deploySets, indexPieces, placementContext, canPlace,
   boardTargets, dropIntent, normalizeDraft, normalizeSp, groupEnemies, factionTypes, snapHud, bossFrac, attackInterval, fmtNum,
   rangeGridBox, shortcutFor, sanitizeSettings, DEFAULT_SETTINGS, normalizeResult, cycleField, fieldLabel, homeFieldId,
@@ -81,36 +81,53 @@ describe('phases', () => {
     assert.equal(battleOverSfx({ pending: 0, unite: false }), 'battleOverNormal');
     assert.equal(battleOverSfx(null), null);
   });
-  test('联防 result box: the server\'s count decides 成功 / 失败, the helpers are named', () => {
-    const pub = { players: [{ playerId: 'p_0', seat: 0, name: '可汗' }, { playerId: 'p_1', seat: 1, name: '博士' }, { playerId: 'p_2', seat: 2, name: '阿米娅' }] };
-    const ok = uniteResultBox({ through: 0, helpers: ['p_1', 'p_2'], leakers: ['p_0'] }, pub);
-    assert.equal(ok.title, '联防成功');
-    assert.equal(ok.tone, 'mint');
-    assert.equal(ok.sub, '博士、阿米娅 拦下了全部突破防线的敌人');
-    assert.ok(ok.duration > 1500, 'it holds long enough to read');
-    const bad = uniteResultBox({ through: 3, helpers: ['p_1'] }, pub);
-    assert.equal(bad.title, '联防失败');
-    assert.equal(bad.tone, 'red');
-    assert.match(bad.sub, /还有 3 只敌人突破防线/);
-    // no 联防 this round (or a client that never saw the outcome): no box at all
-    assert.equal(uniteResultBox(null, pub), null);
-    assert.equal(uniteResultBox(undefined, pub), null);
-    assert.equal(uniteResultBox({}, pub), null);
-    assert.equal(uniteResultBox({ through: -1 }, pub), null);
-    // an unknown helper id still yields a readable box
-    assert.equal(uniteResultBox({ through: 0, helpers: ['nobody'] }, pub).sub, '队友 拦下了全部突破防线的敌人');
+  test('联防 result box: the official dialog per player — 全员无伤！ for the helper, 生命值减少 for the leaker', () => {
+    // the official dialog's own words: a per-player loss, so the helper reads 全员无伤！ and the leaker its own 生命值减少
+    const res = { through: 3, helpers: ['p_1', 'p_2'], leakers: ['p_0'], losses: { p_0: 3, p_1: 0, p_2: 0 } };
+    const helper = uniteResultBox(res, 'p_1');
+    assert.equal(helper.title, '作战结束');
+    assert.equal(helper.tone, 'mint');
+    assert.equal(helper.sub, '全员无伤！');
+    assert.ok(helper.duration > 1500, 'it holds long enough to read');
+    const leaker = uniteResultBox(res, 'p_0');
+    assert.equal(leaker.title, '作战结束');
+    assert.equal(leaker.tone, 'red');
+    assert.equal(leaker.sub, '生命值减少 −3');
+    // nothing got through: nobody was charged, so even the leaker reads 全员无伤！
+    const cleared = { through: 0, helpers: ['p_1', 'p_2'], leakers: ['p_0'], losses: { p_0: 0, p_1: 0, p_2: 0 } };
+    assert.deepEqual(uniteResultBox(cleared, 'p_0'), uniteResultBox(cleared, 'p_1'));
+    assert.equal(uniteResultBox(cleared, 'p_0').sub, '全员无伤！');
+    // a player the server never charged (eliminated, or a spectator) lost nothing
+    assert.equal(uniteResultBox(res, 'nobody').sub, '全员无伤！');
+    assert.equal(uniteResultBox(res, undefined).sub, '全员无伤！');
+    // no 联防 this round (or a client that never saw the outcome): no box at all, the own battle's takes over
+    assert.equal(uniteResultBox(null, 'p_0'), null);
+    assert.equal(uniteResultBox(undefined, 'p_0'), null);
+    assert.equal(uniteResultBox({}, 'p_0'), null);
+    assert.equal(uniteResultBox({ through: -1 }, 'p_0'), null);
+    // a server that predates `losses` cannot tell the helper's 0 from the leaker's N — guess nothing, let the own box run
+    assert.equal(uniteResultBox({ through: 3, helpers: ['p_1'], leakers: ['p_0'] }, 'p_0'), null);
+    assert.equal(uniteResultBox({ through: 0, helpers: ['p_1'] }, 'p_1'), null);
   });
-  test('作战 result box: 成功 without a leak, the count and the LP otherwise, nothing without a battle', () => {
+  test('round result box: the official text, mint without a loss and red with one', () => {
+    assert.deepEqual(roundResultBox(0), { title: '作战结束', micro: 'BATTLE OVER', tone: 'mint', sub: '全员无伤！', duration: RESULT_BOX_MS });
+    assert.deepEqual(roundResultBox(4), { title: '作战结束', micro: 'BATTLE OVER', tone: 'red', sub: '生命值减少 −4', duration: RESULT_BOX_MS });
+    assert.equal(roundResultBox(undefined).sub, '全员无伤！', 'an unknown loss reads as no loss');
+    assert.equal(roundResultBox(-2).sub, '全员无伤！');
+    assert.equal(roundResultBox(2.7).sub, '生命值减少 −2');
+  });
+  test('作战 result box: 全员无伤！ without a leak, the LP otherwise, nothing without a battle', () => {
     const ok = battleResultBox({ leaks: 0, cap: 10 });
-    assert.equal(ok.title, '作战成功');
-    assert.equal(ok.sub, '没有敌人突破防线');
+    assert.equal(ok.title, '作战结束');
+    assert.equal(ok.sub, '全员无伤！');
     const bad = battleResultBox({ leaks: 3, cap: 10 });
-    assert.equal(bad.title, '作战失败');
-    assert.equal(bad.sub, '漏过 3 只 · 目标生命值 −3');
+    assert.equal(bad.title, '作战结束');
+    assert.equal(bad.tone, 'red');
+    assert.equal(bad.sub, '生命值减少 −3');
     // the per-round LP cap (config.lpCapPerRound): the loss shown is min(cap, leaks), never the leaked count
-    assert.equal(battleResultBox({ leaks: 14, cap: 10 }).sub, '漏过 14 只 · 目标生命值 −10');
-    assert.equal(battleResultBox({ leaks: 14 }).sub, '漏过 14 只 · 目标生命值 −10', 'no cap known → the official 10');
-    assert.equal(battleResultBox({ leaks: 2, cap: 5 }).sub, '漏过 2 只 · 目标生命值 −2');
+    assert.equal(battleResultBox({ leaks: 14, cap: 10 }).sub, '生命值减少 −10');
+    assert.equal(battleResultBox({ leaks: 14 }).sub, '生命值减少 −10', 'no cap known → the official 10');
+    assert.equal(battleResultBox({ leaks: 2, cap: 5 }).sub, '生命值减少 −2');
     assert.equal(battleResultBox(null), null);
     assert.equal(battleResultBox({}), null, 'no battle seen this round (a spectator, a reconnect) → no box');
   });

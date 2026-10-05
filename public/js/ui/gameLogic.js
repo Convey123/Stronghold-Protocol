@@ -197,24 +197,39 @@ export function battleOverSfx(cost) {
 export const RESULT_BOX_MS = 2800;
 
 /**
- * The big 联防 result box the official pops up once the joint defence resolves (user request: "跳一个大框出来，然后
- * 提示联防成功" — the remake only had the top capsule and a ticker line). Built from `pub.uniteResult`, the outcome the
- * server carries in its SETTLE view (Match.settle): `through` is the authority's own count of the leaked enemies that
- * still got through, so the helper, the leaker and every spectator show the same box — and nobody has to guess it from
- * a frame that may predate the last kill.
- * @param {{ through?: number, helpers?: string[] } | null | undefined} res pub.uniteResult
- * @param {any} pub the public view (only `players` is read, to name the helpers)
+ * The official round result dialog, in the official WORDS (research 09 §3.1 "Round result dialog"): one dialog for every
+ * combat round — 联防 included — reading **作战结束**, with **全员无伤！** when nothing got through, or **生命值减少** plus
+ * the LP the round actually cost. The remake's own 「联防成功 / 作战成功」 titles were dropped on the user's request
+ * ("选择官方文案"): the official announces the outcome through this one dialog, and the escaped count lives in the HUD's
+ * `tag_miss` capsule (§20.6) rather than in the text. `loss` is the viewer's OWN charge for the round, so the dialog is
+ * per-player exactly as the official's is.
+ * @param {number} loss LP this round cost the viewer (0 → 全员无伤！)
+ * @returns {{ title: string, micro: string, tone: string, sub: string, duration: number }}
+ */
+export function roundResultBox(loss) {
+  const n = Math.max(0, Math.trunc(Number(loss) || 0));
+  return n === 0
+    ? { title: '作战结束', micro: 'BATTLE OVER', tone: 'mint', sub: '全员无伤！', duration: RESULT_BOX_MS }
+    : { title: '作战结束', micro: 'BATTLE OVER', tone: 'red', sub: `生命值减少 −${n}`, duration: RESULT_BOX_MS };
+}
+
+/**
+ * The 联防 round's result box (user request: "跳一个大框出来，然后提示联防成功"; the official dialog's own words on the
+ * follow-up "选择官方文案"). Built from `pub.uniteResult`, the outcome the server carries in its SETTLE view
+ * (Match.settle): `losses` is each player's own LP charge for the round, so a helper who lost nothing reads 全员无伤！
+ * while the leaker reads their own 生命值减少 — the same number LP was charged, so the box cannot disagree with the HUD.
+ * A view without `losses` (an older server) yields null and the own battle's box takes over instead of guessing.
+ * @param {{ through?: number, helpers?: string[], losses?: Record<string, number> } | null | undefined} res pub.uniteResult
+ * @param {string|null|undefined} selfId the viewer's playerId
  * @returns {{ title: string, micro: string, tone: string, sub: string, duration: number } | null} null when no 联防 resolved
  */
-export function uniteResultBox(res, pub) {
+export function uniteResultBox(res, selfId) {
   const through = Number(res?.through);
   if (!Number.isFinite(through) || through < 0) return null;
-  const names = new Map(sortedPlayers(pub).map((p) => [p.playerId, p.name || '博士']));
-  const helpers = (Array.isArray(res?.helpers) ? res.helpers : []).map((id) => names.get(id)).filter(Boolean);
-  const who = helpers.length ? helpers.join('、') : '队友';
-  return through === 0
-    ? { title: '联防成功', micro: 'JOINT DEFENSE', tone: 'mint', sub: `${who} 拦下了全部突破防线的敌人`, duration: RESULT_BOX_MS }
-    : { title: '联防失败', micro: 'JOINT DEFENSE', tone: 'red', sub: `还有 ${through} 只敌人突破防线`, duration: RESULT_BOX_MS };
+  const losses = res?.losses;
+  if (!losses || typeof losses !== 'object') return null;
+  // a player the server did not charge (already eliminated, or a spectator) lost nothing
+  return roundResultBox(Number(losses[selfId]));
 }
 
 /**
@@ -231,13 +246,8 @@ export function battleResultBox(cost) {
   if (!cost) return null;
   const leaks = Number.isFinite(cost.leaks) ? Math.max(0, Math.trunc(cost.leaks)) : null;
   if (leaks == null) return null;
-  if (leaks === 0) return { title: '作战成功', micro: 'COMBAT CLEAR', tone: 'mint', sub: '没有敌人突破防线', duration: RESULT_BOX_MS };
   const cap = Number.isFinite(cost.cap) && cost.cap > 0 ? Math.trunc(cost.cap) : 10;
-  const loss = Math.min(cap, leaks);
-  return {
-    title: '作战失败', micro: 'COMBAT OVER', tone: 'red',
-    sub: `漏过 ${leaks} 只 · 目标生命值 −${loss}`, duration: RESULT_BOX_MS,
-  };
+  return roundResultBox(Math.min(cap, leaks));
 }
 
 /** Label of the prep capsule ("休息一下" in the original). */

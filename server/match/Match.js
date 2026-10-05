@@ -930,8 +930,13 @@ export class Match {
     }
     if (this.phase === PHASE.UNITE && this.unitePlan) v.unite = { helpers: this.unitePlan.helpers.map((p) => p.playerId), leakers: this.unitePlan.leakers.map((p) => p.playerId) };
     // the 联防's outcome as data (set by settle(), see there): the SETTLE view carries it so the client can show the
-    // result box (ui/components.ResultDialog via ui/gameLogic.uniteResultBox) — { through, helpers, leakers }
-    if (this.phase === PHASE.SETTLE && this.uniteResultView) v.uniteResult = { ...this.uniteResultView, helpers: this.uniteResultView.helpers.slice(), leakers: this.uniteResultView.leakers.slice() };
+    // result box (ui/components.ResultDialog via ui/gameLogic.uniteResultBox) — { through, helpers, leakers, losses }
+    // where `losses` is each player's own LP charge for the round (the official dialog is per-player)
+    if (this.phase === PHASE.SETTLE && this.uniteResultView) {
+      const ur = this.uniteResultView;
+      v.uniteResult = { through: ur.through, helpers: ur.helpers.slice(), leakers: ur.leakers.slice() };
+      if (ur.losses) v.uniteResult.losses = { ...ur.losses };
+    }
     return v;
   }
 
@@ -2886,31 +2891,36 @@ export class Match {
     const uniteRan = !!(plan && uniteResult && !uniteResult.synthetic);
     const survivors = uniteRan ? uniteSurvivors(plan, uniteResult) : null;
     // 联防 outcome notice (user request: "联防成功后加一个像原版卫戍的提示"): the official shows a 「联防阶段」 banner
-    // and the capsule 「联防开始」 while the helpers fight; the remake announces the RESULT once that battle is over —
+    // and the capsule 「联防开始」 while the helpers fight, then announces the RESULT once that battle is over —
     // every leaked enemy stopped, or how many still got through (the leakers' LP, charged below, is capped per round).
-    // The ticker line is the running commentary; `uniteResultView` is the same outcome as data, carried in the SETTLE
-    // public so EVERY client (helper, leaker, spectator) can pop the official's big result box (user follow-up:
-    // "跳一个大框出来，然后提示联防成功") from the authority's own count instead of guessing it from a stale frame.
+    // The outcome travels as data only (`uniteResultView`, carried in the SETTLE public) so EVERY client (helper, leaker,
+    // spectator) pops the same result box (user follow-up: "跳一个大框出来，然后提示联防成功") from the authority's own
+    // count instead of guessing it from a stale frame. It deliberately does NOT also go out as a ticker line: the official
+    // announces a battle's outcome in the one result dialog and stacks no running commentary on top of it (user request:
+    // "删去小字部分").
     if (uniteRan && Array.isArray(plan.leakers) && plan.leakers.length) {
       let through = 0;
       for (const lk of plan.leakers) through += Math.max(0, survivors.get(lk.playerId) || 0);
-      const names = plan.helpers.map((p) => p.name).join('、');
-      this.tickerText(through === 0
-        ? `联防成功：${names} 拦下了全部突破防线的敌人`
-        : `联防结束：还有 ${through} 只敌人突破防线`, FLOW_TICKER_PRIORITY);
       this.uniteResultView = {
         through,
         helpers: plan.helpers.map((p) => p.playerId),
         leakers: plan.leakers.map((p) => p.playerId),
+        losses: null, // filled with each player's own charge by the LP loop below
       };
     } else {
       this.uniteResultView = null;
     }
     const alive = this.alivePlayers();
+    // Each viewer's OWN charge for this round, keyed by player: the official result dialog is per-player ("生命值减少" or
+    // not), so a helper who lost nothing must not read a leaker's loss out of a shared total. Only the 联防 outcome needs
+    // it (without one the client derives the loss from its own battle, ui/gameLogic.battleResultBox) — the same `loss`
+    // charged to LP just below, so the box and the LP number can never disagree.
+    const uniteLosses = this.uniteResultView ? {} : null;
     for (const ps of alive) {
       const r = this.lastResults.get(ps.playerId) || { leaked: [], perfect: true, coins: 0, layerGains: {}, killed: 0, damageDealt: 0 };
       const counted = (r.leaked || []).filter((l) => l && l.counted !== false).length;
       const loss = uniteRan && plan.leakers.includes(ps) ? Math.min(cap, survivors.get(ps.playerId) || 0) : Math.min(cap, counted);
+      if (uniteLosses) uniteLosses[ps.playerId] = loss;
       ps.lp -= loss;
       ps.stats.lpLost += loss;
       ps.stats.leaks += counted;
@@ -2945,6 +2955,7 @@ export class Match {
       this.dispatch(ps, 'onBattleResult', { result: r, lpLoss: loss, perfect: counted === 0 && r.perfect !== false, unite: uniteResult || null });
       ps.recompute();
     }
+    if (uniteLosses) this.uniteResultView.losses = uniteLosses;
     for (const ps of alive) {
       if (ps.lp <= 0) {
         ps.lp = 0;

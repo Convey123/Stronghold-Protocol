@@ -443,10 +443,11 @@ test('#7 a leaked enemy that splits (磨砻: DeadSpawn ×2) raises the counter �
 // =====================================================================================================================
 // 联防 result notice (user request: "联防成功后加一个像原版卫戍的提示"). The official shows a 「联防阶段」 banner and the
 // capsule 「联防开始」 while the helpers fight; the remake announces the OUTCOME once that battle is over — every leaked
-// enemy stopped, or how many still got through. Follow-up ("跳一个大框出来，然后提示联防成功"): the same outcome also
-// rides the SETTLE public view as data (`uniteResult`), which is what the client's big result box renders.
+// enemy stopped, or how many still got through. Follow-up ("跳一个大框出来，然后提示联防成功"): the outcome rides the
+// SETTLE public view as data (`uniteResult`), which is what the client's big result box renders — and that box is the
+// ONLY announcement, with no ticker line stacked on top of it (follow-up: "删去小字部分").
 
-test('联防 outcome ticker: 成功 when the helpers stop everything, the count through otherwise', () => {
+test('联防 outcome: the SETTLE view carries it as data, and no result line is broadcast', () => {
   const run = (survivors) => {
     const h = makeMatch({ mode: 'coop', difficulty: 'NORMAL', humans: 3, seed: 6060, fake: true, clientCombat: true, instant: false,
       script: (b) => (b.kind === 'normal'
@@ -457,23 +458,34 @@ test('联防 outcome ticker: 成功 when the helpers stop everything, the count 
     const before = h.bc.length;
     h.run(() => m.phase === PHASE.SETTLE || h.ended != null, { maxSteps: 5e6 });
     const tickers = h.bc.slice(before).filter((x) => x.t === 'm.ticker').map((x) => x.text);
-    // the SETTLE view every client renders the result box from (helper, leaker and spectator see the same numbers)
+    // the SETTLE view every client renders the result box from. `losses` is each player's OWN charge for the round, which
+    // is what the official per-player result dialog prints (ui/gameLogic.uniteResultBox → roundResultBox), so a helper who
+    // lost nothing reads 全员无伤！ while the leaker reads its own 生命值减少 — the same number LP was charged.
     const view = m.publicView();
     assert.equal(view.phase, PHASE.SETTLE);
+    const through = Object.values(survivors).reduce((a, b) => a + b, 0);
+    const losses = { p_0: Math.min(m.gd.lpCapPerRound, through) };
+    for (const id of view.uniteResult.helpers) losses[id] = 0;
     assert.deepEqual(view.uniteResult, {
-      through: Object.values(survivors).reduce((a, b) => a + b, 0),
-      helpers: view.uniteResult.helpers, leakers: ['p_0'],
+      through, helpers: view.uniteResult.helpers, leakers: ['p_0'], losses,
     }, 'the 联防 outcome rides the SETTLE view');
     assert.ok(view.uniteResult.helpers.length > 0 && !view.uniteResult.helpers.includes('p_0'), 'the helpers are the perfect players');
+    // the per-round LP cap bounds what the dialog may show, and a helper is never charged (0 → 全员无伤！)
+    assert.ok(losses.p_0 <= m.gd.lpCapPerRound, 'the dialog never shows more than the round can cost');
+    for (const id of view.uniteResult.helpers) assert.equal(losses[id], 0, 'a helper lost nothing');
     checkInvariants(m);
     m.dispose();
     return tickers;
   };
   const cleared = run({});
-  assert.ok(cleared.some((t) => t.startsWith('联防成功')), `expected a 联防成功 line, got ${JSON.stringify(cleared)}`);
+  // the 联防's own open line is still broadcast (research 09 §3.1: the official shows the 「联防阶段」 banner while it runs) …
+  assert.ok(cleared.some((t) => t.startsWith('联防阶段')), `expected the 联防阶段 line, got ${JSON.stringify(cleared)}`);
+  // … but the OUTCOME is box-only: no 「联防成功」 / 「联防结束」 line beside it
+  assert.ok(!cleared.some((t) => /^联防(成功|结束)/.test(t)),
+    `no result line may be broadcast, got ${JSON.stringify(cleared)}`);
   const through = run({ p_0: 2 });
-  assert.ok(through.some((t) => t.startsWith('联防结束') && /还有 2 只/.test(t)),
-    `expected the count that got through, got ${JSON.stringify(through)}`);
+  assert.ok(!through.some((t) => /^联防(成功|结束)/.test(t)),
+    `no result line may be broadcast, got ${JSON.stringify(through)}`);
 });
 
 test('no 联防 this round: the SETTLE view carries no uniteResult (the client then shows the round\'s own battle result)', () => {

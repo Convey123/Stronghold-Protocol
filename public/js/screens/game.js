@@ -603,9 +603,10 @@ function MatchScreen() {
       const key = battleOverSfx(cost);
       if (key) audio.sfx(key);
       // and the result box the official pops up when the fight resolves (user request: "跳一个大框出来"): the 联防's own
-      // outcome first — the server's count, the same for helper, leaker and spectator (ui/gameLogic.uniteResultBox) —
-      // else this round's own battle ("每一把结束以后都有一个成功", battleResultBox)
-      const box = uniteResultBox(pub?.uniteResult, pub) || battleResultBox(cost);
+      // outcome first — each player's own LP charge, so helper and leaker read their own loss (ui/gameLogic.uniteResultBox)
+      // — else this round's own battle ("每一把结束以后都有一个成功", battleResultBox). Both print the official dialog's
+      // own words: 作战结束 + 全员无伤！ / 生命值减少 −N (user request: "选择官方文案").
+      const box = uniteResultBox(pub?.uniteResult, myId) || battleResultBox(cost);
       if (box) setResultBox({ ...box, key: `result:${pub?.round}:${prev}` });
     }
     setWatching(null); // the server resets every watcher to its own field on phase changes
