@@ -35,6 +35,8 @@
 //        pieceDragStart { uid, piece, from } · pieceDrop { uid, piece, from, target } · pieceDragEnd {uid, dropped}
 //        pieceClick { uid, piece, button, detail, clientX, clientY } (battle units: { unitId, uid, unit, … })
 //        pieceDetail (right-click / long-press) · pieceHover { uid } | { uid: null } (battle: + unitId, unit)
+//        tileClick { row, col, x, y } — the ground itself was tapped and nothing stands there (GitHub issue #184:
+//        a special terrain tile's own tip; the screen resolves it with gameLogic.terrainInfo)
 //        tileHover { row, col, area, idx } | null (while dragging: the drop target — the tile under the pointer)
 //   view.pieceScreenRect(uid) → { left, top, right, bottom, width, height, x, y } (client px: the drawn body) | null
 // Picking (user playtest #4 item 1: the ground is drawn as tiles — a press on a tile is a press on the unit standing
@@ -1338,6 +1340,17 @@ export async function createFieldView(host, options = {}) {
     return hit ? hit.ref : null;
   }
 
+  /**
+   * The ground itself was tapped: nothing stands there, so the TILE explains itself — a special terrain tile (活性源石,
+   * 沼泽, 排气格栅, 深水区, 红/蓝门, 传送) opens its own card (GitHub issue #184; screens/game.js `tileClick` →
+   * gameLogic.terrainInfo, which says nothing about an ordinary floor / road / wall tile).
+   */
+  function emitTileClick(ev, e) {
+    const t = groundTile(ev.x, ev.y);
+    if (!t) return;
+    emit('tileClick', { row: t.row, col: t.col, x: t.x, y: t.y, button: e.button, clientX: e.clientX, clientY: e.clientY });
+  }
+
   const onPointerDown = (e) => {
     if (destroyed) return;
     const ev = evPayload(e);
@@ -1348,18 +1361,20 @@ export async function createFieldView(host, options = {}) {
         const payload = { unitId: v.id, uid: info?.uid ?? null, unit: info, button: e.button, detail: e.button === 2, clientX: e.clientX, clientY: e.clientY };
         emit('pieceClick', payload);
         if (e.button === 2) emit('pieceDetail', payload);
-      } else if (penViews.size) {
-        const pv = penUnitAt(ev.x, ev.y);
-        if (pv) emitPenClick(pv, e);
+        return;
       }
+      const pv = penViews.size ? penUnitAt(ev.x, ev.y) : null;
+      if (pv) emitPenClick(pv, e);
+      else emitTileClick(ev, e);
       return;
     }
     if (drag.pointerDown(ev)) { try { canvas.setPointerCapture(e.pointerId); } catch { /* ignore */ } return; }
     if (mode === 'prep') { const lv = leaderAt(ev.x, ev.y); if (lv) { emitPenClick(lv, e); return; } }
     if (penViews.size && mode === 'prep') {
       const pv = penUnitAt(ev.x, ev.y);
-      if (pv) emitPenClick(pv, e);
+      if (pv) { emitPenClick(pv, e); return; }
     }
+    emitTileClick(ev, e);
   };
   const onPointerMove = (e) => {
     if (destroyed) return;
