@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { bgmKeyFor, resolveBgm, SfxLimiter, AudioManager, normalAttackSfx, installAudio, audio, combatTrackFor, COMBAT_TRACK_SWITCH_ROUND, VoiceGate, resultVoiceSlot, VOICE_PRIORITY, VOICE_COOLDOWN_MS } from '../../public/js/audio.js';
+import { bgmKeyFor, resolveBgm, SfxLimiter, AudioManager, normalAttackSfx, installAudio, audio, combatTrackFor, COMBAT_TRACK_SWITCH_ROUND, VoiceGate, resultSpeaker, resultVoiceSlot, VOICE_PRIORITY, VOICE_COOLDOWN_MS } from '../../public/js/audio.js';
 import { mediaUrl } from '../../public/js/media.js';
 import { PHASE } from '../../shared/constants.js';
 
@@ -182,6 +182,35 @@ describe('operator battle voice', () => {
     assert.equal(resultVoiceSlot(), 'resultThree');
   });
 
+  test('resultSpeaker: the operators of THAT battle (survivors first), never the field on screen', () => {
+    // `mine.unitsEnd` of the finished own battle: operators (char_*) and the board's summon pieces (token_*, no voice)
+    const mine = { unitsEnd: [
+      { defId: 'char_fallen', alive: false },
+      { defId: 'token_1001', alive: true },
+      { defId: 'char_a', alive: true },
+      { defId: 'char_b', alive: true },
+    ] };
+    assert.equal(resultSpeaker(mine, () => 0), 'char_a');
+    assert.equal(resultSpeaker(mine, () => 0.999), 'char_b', 'a drawn operator, still only the ones standing');
+    assert.equal(resultSpeaker(mine, () => 0.4), 'char_a');
+    const drawn = new Set([0, 0.2, 0.4, 0.6, 0.8, 1].map((r) => resultSpeaker(mine, () => r)));
+    assert.deepEqual([...drawn].sort(), ['char_a', 'char_b'], 'a fallen operator or a summon never speaks');
+    // the whole squad fell: only then does a fallen operator report the result
+    const wiped = { unitsEnd: [{ defId: 'char_fallen', alive: false }, { defId: 'char_also', alive: false }] };
+    assert.equal(resultSpeaker(wiped, () => 0), 'char_fallen');
+    assert.equal(resultSpeaker(wiped, () => 0.999), 'char_also');
+    // no operator on that field at all — summons only, an empty list, or a payload without `unitsEnd` (an older
+    // server): no line. There is deliberately NO fallback to the operators currently tracked for the field on screen —
+    // that fallback is what made a watched team-mate's operator say the viewer's line (review on #73).
+    assert.equal(resultSpeaker({ unitsEnd: [{ defId: 'token_1', alive: true }] }, () => 0), null);
+    assert.equal(resultSpeaker({ unitsEnd: [] }), null);
+    assert.equal(resultSpeaker({}), null);
+    assert.equal(resultSpeaker(null), null);
+    assert.equal(resultSpeaker(undefined), null);
+    assert.equal(resultSpeaker({ unitsEnd: [{ alive: true }] }, () => 0), null, 'a unit without a defId');
+    assert.equal(resultSpeaker({ unitsEnd: [{ defId: 'enemy_1007_slime', alive: true }] }, () => 0), null, 'an enemy');
+  });
+
   test('VoiceGate: one line at a time, a global gap, per-unit cooldowns, higher priority takes over', () => {
     assert.ok(VOICE_PRIORITY.start > VOICE_PRIORITY.skill1 && VOICE_PRIORITY.skill1 > VOICE_PRIORITY.place, 'the official order');
     assert.ok(VOICE_PRIORITY.resultThree > VOICE_PRIORITY.skill1 && VOICE_PRIORITY.resultThree < VOICE_PRIORITY.faceEnemy);
@@ -263,7 +292,68 @@ describe('operator battle voice', () => {
       a.handleBattleEvents([['deploy', 21]]);
       await new Promise((r) => setTimeout(r, 10));
       assert.equal(a.voiceNode?.url, '/v/a_start.mp3', 'a new battle starts with 行动出发 again');
-      assert.equal(a.anyOperator(), 'char_a', 'a deployed operator of the field');
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  test('voice: a stale callback never frees the channel the newest line holds (review on #73)', async () => {
+    const fw = fakeWindow();
+    const origFetch = globalThis.fetch;
+    // holds named URLs open: the first request for one waits on the promise in `held`, later ones (the manager caches a
+    // decoded URL) do not. `fail` answers 404, i.e. `_buffer` resolves null.
+    const held = new Map();
+    const fail = new Set();
+    globalThis.fetch = async (u) => {
+      if (fail.has(u)) return { ok: false, status: 404 };
+      const h = held.get(u);
+      if (h) { held.delete(u); await h; }   // the manager caches per URL, so only the first call waits
+      return { ok: true, arrayBuffer: async () => new ArrayBuffer(8) };
+    };
+    const tick = () => new Promise((r) => setTimeout(r, 10));
+    try {
+      const vm = { audio: { sfx: { ui: {}, battle: {}, units: {} }, voice: {
+        char_a: { place: '/v/a_p1.mp3', start: '/v/a_start.mp3', faceEnemy: '/v/a_face.mp3', select: '/v/a_sel.mp3' },
+      } } };
+      const a = new AudioManager({ win: fw.win, getManifest: () => vm });
+      a.voiceGate = new VoiceGate({ gapMs: 0 });   // the gap itself is covered above
+      a.install();
+      fw.fire('pointerdown');
+      await tick();
+      // 部署 (20) starts with its LOAD HELD OPEN, so 行动出发 (100) takes the channel over while it is still loading
+      let openA;
+      held.set('/v/a_p1.mp3', new Promise((r) => { openA = r; }));
+      assert.equal(a.voice('char_a', 'place', { unitKey: 1 }), true);
+      assert.equal(a.voice('char_a', 'start', { unitKey: 2 }), true, 'a higher priority line takes the channel over');
+      await tick();
+      assert.equal(a.voiceNode?.url, '/v/a_start.mp3', 'the replacement is on air');
+      openA();                                     // the preempted line's load finally finishes
+      await tick();
+      assert.equal(a.voiceNode?.url, '/v/a_start.mp3', 'a stale callback never starts its own line');
+      assert.equal(a.voice('char_a', 'place', { unitKey: 3 }), false, 'and never freed the channel it lost');
+
+      // the safety timer / onended of a line that was STOPPED must not free the line that replaced it either
+      const ringing = a.voiceNode;                 // 行动出发 on air
+      a._stopVoice();                              // the stop path releases the gate itself and moves the token on
+      assert.equal(a.voice('char_a', 'place', { unitKey: 4 }), true, 'the channel is free again');
+      await tick();
+      const now = a.voiceNode;
+      assert.equal(now?.url, '/v/a_p1.mp3');
+      ringing.src.onended?.();                     // the stopped line's own end lands late (or its safety timer fires)
+      ringing.src.onended?.();                     // …and a second time, like timer + onended both firing
+      await tick();
+      assert.equal(a.voiceNode, now, 'the line on air is untouched');
+      assert.equal(a.voice('char_a', 'place', { unitKey: 5 }), false, 'and its channel is still held');
+
+      // a load that FAILS after the takeover (404 ⇒ null buffer): same rule
+      fail.add('/v/a_sel.mp3');
+      a._stopVoice();
+      assert.equal(a.voice('char_a', 'select', { unitKey: 6 }), true);
+      assert.equal(a.voice('char_a', 'place', { unitKey: 7 }), true, 'a higher priority line takes over while it loads');
+      await tick();
+      assert.equal(a.voiceNode?.url, '/v/a_p1.mp3');
+      await tick();
+      assert.equal(a.voice('char_a', 'place', { unitKey: 8 }), false, 'the failed load kept out of the newest line\'s way');
     } finally {
       globalThis.fetch = origFetch;
     }

@@ -274,6 +274,29 @@ export function resultVoiceSlot(o = {}) {
   return o.hard ? 'resultFour' : 'resultThree';
 }
 
+/**
+ * Who says a battle's **result** line (结算): an operator of THAT battle's own field. Never the field the player happens
+ * to be looking at (review on #73): reading the tracked units of the field on screen made a teammate's operator say the
+ * viewer's 作战结束 line while the viewer was watching them.
+ * `pp` is that battle's own `perPlayer` entry (BattleResult, sim/Battle.js): `unitsEnd` lists what stood on its field
+ * when the battle ended, `defId` being an operator (`char_*`) or a summon piece (`token_*`, which does not talk).
+ * Survivors speak first — the line reports how the battle went, and a wiped-out squad is the only case where a fallen
+ * operator ends up saying it. Ties are drawn like every other unit sound.
+ * @param {{ unitsEnd?: Array<{ defId?: string|null, alive?: boolean }> } | null | undefined} pp that battle's perPlayer
+ * @param {() => number} [random]
+ * @returns {string|null} charId, or null when that battle fielded no operator at all
+ */
+export function resultSpeaker(pp, random = Math.random) {
+  const ops = [];
+  for (const u of Array.isArray(pp?.unitsEnd) ? pp.unitsEnd : []) {
+    if (u && typeof u.defId === 'string' && u.defId.startsWith('char_')) ops.push({ id: u.defId, alive: !!u.alive });
+  }
+  const standing = ops.filter((o) => o.alive);
+  const pool = standing.length ? standing : ops;   // only a wiped-out squad is spoken for by a fallen operator
+  if (!pool.length) return null;
+  return pool[Math.min(pool.length - 1, Math.floor(random() * pool.length))].id;
+}
+
 /** Concurrency + cooldown gate for battle SFX. Pure (time is passed in). */
 /** Gestures that may unlock audio: iOS Safari only accepts touchend / click / keydown; pointerdown covers the rest. */
 const UNLOCK_EVENTS = ['pointerdown', 'touchend', 'click', 'keydown'];
@@ -812,23 +835,16 @@ export class AudioManager {
     } catch (err) { this._warn('voice', err); return false; }
   }
 
-  /**
-   * A deployed operator of the current field, for a line that belongs to the battle rather than to one unit (结算).
-   * @returns {string|null} charId, or null while no operator is on the field
-   */
-  anyOperator() {
-    const out = [];
-    for (const u of this.units.values()) {
-      if (u && u.side !== 'enemy' && typeof u.def === 'string' && u.def.startsWith('char_')) out.push(u.def);
-    }
-    return out.length ? out[Math.floor(Math.random() * out.length)] : null;
-  }
-
   /** Fetch/decode and start one voice line through the voice channel. */
   _playVoice(url, token, volume) {
+    // `token` is the line's own `voiceToken`. Every deferred step below — the decode, a failed fetch, `onended` and the
+    // safety timer — can land AFTER this line was taken over or stopped: `voiceToken` has moved on and the channel then
+    // belongs to the line that replaced it. So each step re-checks its token and, when it is stale, touches NOTHING:
+    // `_stopVoice` (takeover / stop) and `setFieldUnits` released the gate themselves. An unconditional release here let
+    // a stale callback free the channel the NEW line had just taken, and the next line walked in on top of it (review
+    // on #73).
     this._buffer(url).then((buf) => {
-      // a line that was taken over (or stopped) while it decoded must not start afterwards
-      if (token !== this.voiceToken) { this.voiceGate.release(); return; }
+      if (token !== this.voiceToken) return;   // taken over / stopped while it decoded: not ours to release
       if (!buf || !this.ctx || !this.voiceGain) { this.voiceGate.release(); return; }
       try {
         const src = this.ctx.createBufferSource();
@@ -841,16 +857,23 @@ export class AudioManager {
         const end = () => {
           if (done) return;
           done = true;
-          if (this.voiceNode === node) this.voiceNode = null;
-          this.voiceGate.release();
+          // this line's own end (natural, or the safety timer): only the line that still owns the channel may free it.
+          // A stale end is the takeover's leftovers — `_stopVoice` already faded it out and released the gate.
+          if (token === this.voiceToken) {
+            if (this.voiceNode === node) this.voiceNode = null;
+            this.voiceGate.release();
+          }
           try { gain.disconnect(); } catch { /* ignore */ }
         };
         src.onended = end;
         setTimeout(end, (buf.duration + 0.3) * 1000); // safety if onended never fires
         src.start();
         this.voiceNode = node;
-      } catch (err) { this._warn('voice-play', err); this.voiceGate.release(); }
-    }, () => this.voiceGate.release());
+      } catch (err) {
+        this._warn('voice-play', err);
+        if (token === this.voiceToken) this.voiceGate.release();
+      }
+    }, () => { if (token === this.voiceToken) this.voiceGate.release(); });
   }
 
   /** Fade the line on air out (a higher priority line is taking the channel over). */

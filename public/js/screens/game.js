@@ -108,7 +108,7 @@ import { battleRunner } from '../battle/runner.js';
 import { isClientCombat, observeTarget, teammateProgress, cameraLayers, layerCamera, sidesOf, resumedWatch } from '../battle/observe.js';
 import { screenStrip, playerBonds, playerLayer, detailBondOwner, toggleBond, popupView } from '../ui/watchBonds.js';
 import { data, localAsset, getMode } from '../data.js';
-import { audio, resultVoiceSlot } from '../audio.js';
+import { audio, resultSpeaker, resultVoiceSlot } from '../audio.js';
 import { useDocClass, FullscreenButton } from '../ui/device.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
@@ -502,7 +502,9 @@ function MatchScreen() {
         const pid = st.me?.playerId;
         const mine = (pid && msg.result.perPlayer && msg.result.perPlayer[pid]) || null;
         const diff = st.match?.public?.difficulty;
-        const charId = audio.anyOperator();
+        // the speaker comes from THIS battle's own field (`mine.unitsEnd`), not from the field on screen: watching a
+        // teammate used to make THEIR operator say the viewer's line (review on #73)
+        const charId = resultSpeaker(mine);
         if (!charId) return;
         audio.voice(charId, resultVoiceSlot({
           perfect: !!(mine?.perfect),
