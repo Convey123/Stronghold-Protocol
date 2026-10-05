@@ -2,13 +2,15 @@
 // "每一把结束以后都有一个成功"), on the in-match mock harness (public/dev/game-mock.html):
 //   SP_E2E=1 CHROME_PATH=… node --test test/ui/resultbox.e2e.test.js   → screenshots in test/e2e/out/resultbox-*.png
 //
-// The box prints the OFFICIAL round result dialog's own words (user request "选择官方文案", ui/gameLogic.roundResultBox):
-// 作战结束 + 全员无伤！, or + 生命值减少 −N when the round cost the viewer LP. Asserted: `?phase=SETTLE&variant=unite`
-// pops it for a leaker the helpers saved (losses.p1 = 0 → 全员无伤！) and `unite,through` for the same leaker charged 3
-// (→ 生命值减少 −3, NOT the helpers' 0), driving the harness' own COMBAT → SETTLE switcher pops the round's own battle's
-// box, the box is centred and click-through, it closes by itself (and really leaves the DOM), and no scenario logs a
-// console error. The words themselves are unit-tested in test/ui/gameLogic.test.js (roundResultBox / uniteResultBox /
-// battleResultBox) and the per-player loss behind them server-side in test/match/playtest6-matchflow.test.js.
+// The box wears the official dialog's title (作战结束, user request "选择官方文案") and, in a 联防 round, leads its sub with
+// the 联防's own verdict so every participant can see whether it held (user request "根据联防结果跳大框"), followed by the
+// LP the viewer was charged. Asserted: `?phase=SETTLE&variant=unite` pops it for a leaker the helpers saved (losses.p1 = 0
+// → 全员无伤！· 联防成功) and `unite,through` for the same leaker charged 3 (→ 联防失败：还有 3 只突破防线 · 生命值减少
+// −3, NOT the helpers' 0 and not this leaker's own pre-union leak count), driving the harness' own COMBAT → SETTLE
+// switcher pops the round's own battle's box, the box is centred and click-through, it closes by itself (and really leaves
+// the DOM), and no scenario logs a console error. The words themselves are unit-tested in test/ui/gameLogic.test.js
+// (uniteResultBox / battleResultBox / roundResultBox) and the per-player loss behind them server-side in
+// test/match/playtest6-matchflow.test.js.
 
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -83,9 +85,9 @@ describe('settlement result box in the browser', { skip: !ENABLED && 'set SP_E2E
     const ok = await boxState(page);
     // the mock's local player is p1, a leaker whose enemies the helpers all stopped → charged nothing (losses.p1 = 0)
     assert.match(ok.title, /^作战结束$/, JSON.stringify(ok));
-    assert.equal(ok.sub, '全员无伤！');
+    assert.equal(ok.sub, '全员无伤！ · 联防成功');
     assert.match(ok.micro, /BATTLE OVER/);
-    assert.ok(ok.classes.includes('rdialog--mint'), `the no-loss tone: ${ok.classes}`);
+    assert.ok(ok.classes.includes('rdialog--mint'), `the held tone: ${ok.classes}`);
     assert.equal(ok.chevrons, 2); assert.equal(ok.ticks, 4);
     assert.ok(ok.titlePx >= 40, `a BIG box, not a line of small print (title ${ok.titlePx}px)`);
     assert.ok(ok.visible, 'a real plate, not a hairline');
@@ -95,12 +97,13 @@ describe('settlement result box in the browser', { skip: !ENABLED && 'set SP_E2E
     assert.deepEqual(problems, []);
     await page.close();
 
-    // the same 联防, but 3 got through: the local leaker (p1) is charged 3 and reads its OWN loss, not the helpers' 0
+    // the same 联防, but 3 got through: the verdict leads, then the LP this player was actually charged (3, not the
+    // helpers' 0 and not this leaker's own pre-union leak count)
     const t = await open('/dev/game-mock.html?shot=1&render=fallback&phase=SETTLE&variant=unite,through');
     await t.page.waitForSelector('.rdialog', { timeout: 10000 });
     const bad = await boxState(t.page);
     assert.equal(bad.title, '作战结束');
-    assert.equal(bad.sub, '生命值减少 −3', 'the LP the round charged this player, from the manifest view');
+    assert.equal(bad.sub, '联防失败：还有 3 只突破防线 · 生命值减少 −3', 'the verdict first, this player\'s own LP after it');
     assert.ok(bad.classes.includes('rdialog--red'), `the loss tone: ${bad.classes}`);
     await t.page.screenshot({ path: path.join(OUT, 'resultbox-unite-through.png') });
     assert.deepEqual(t.problems, []);

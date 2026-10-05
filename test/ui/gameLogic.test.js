@@ -81,33 +81,38 @@ describe('phases', () => {
     assert.equal(battleOverSfx({ pending: 0, unite: false }), 'battleOverNormal');
     assert.equal(battleOverSfx(null), null);
   });
-  test('联防 result box: the official dialog per player — 全员无伤！ for the helper, 生命值减少 for the leaker', () => {
-    // the official dialog's own words: a per-player loss, so the helper reads 全员无伤！ and the leaker its own 生命值减少
+  test('联防 result box: the 联防 verdict for every participant, the viewer\'s own LP beside it', () => {
     const res = { through: 3, helpers: ['p_1', 'p_2'], leakers: ['p_0'], losses: { p_0: 3, p_1: 0, p_2: 0 } };
+    // the helper was spared, but must still learn the 联防 FAILED — otherwise a helper reads the same thing on success
     const helper = uniteResultBox(res, 'p_1');
     assert.equal(helper.title, '作战结束');
-    assert.equal(helper.tone, 'mint');
-    assert.equal(helper.sub, '全员无伤！');
+    assert.equal(helper.tone, 'orange', 'it failed but this player was spared');
+    assert.equal(helper.sub, '联防失败：还有 3 只突破防线 · 全员无伤！');
     assert.ok(helper.duration > 1500, 'it holds long enough to read');
+    // the leaker reads the same verdict first, then the LP settlement actually charged
     const leaker = uniteResultBox(res, 'p_0');
     assert.equal(leaker.title, '作战结束');
     assert.equal(leaker.tone, 'red');
-    assert.equal(leaker.sub, '生命值减少 −3');
-    // nothing got through: nobody was charged, so even the leaker reads 全员无伤！
+    assert.equal(leaker.sub, '联防失败：还有 3 只突破防线 · 生命值减少 −3');
+    // nothing got through: the verdict is the same for helper and leaker (the official 全员无伤！ for both, neither charged)
     const cleared = { through: 0, helpers: ['p_1', 'p_2'], leakers: ['p_0'], losses: { p_0: 0, p_1: 0, p_2: 0 } };
     assert.deepEqual(uniteResultBox(cleared, 'p_0'), uniteResultBox(cleared, 'p_1'));
-    assert.equal(uniteResultBox(cleared, 'p_0').sub, '全员无伤！');
+    assert.equal(uniteResultBox(cleared, 'p_0').sub, '全员无伤！ · 联防成功');
+    assert.equal(uniteResultBox(cleared, 'p_0').tone, 'mint');
     // a player the server never charged (eliminated, or a spectator) lost nothing
-    assert.equal(uniteResultBox(res, 'nobody').sub, '全员无伤！');
-    assert.equal(uniteResultBox(res, undefined).sub, '全员无伤！');
-    // no 联防 this round (or a client that never saw the outcome): no box at all, the own battle's takes over
+    assert.equal(uniteResultBox(res, 'nobody').sub, '联防失败：还有 3 只突破防线 · 全员无伤！');
+    assert.equal(uniteResultBox(res, undefined).sub, '联防失败：还有 3 只突破防线 · 全员无伤！');
+    // no 联防 this round: no box at all, the own battle's takes over
     assert.equal(uniteResultBox(null, 'p_0'), null);
     assert.equal(uniteResultBox(undefined, 'p_0'), null);
     assert.equal(uniteResultBox({}, 'p_0'), null);
     assert.equal(uniteResultBox({ through: -1 }, 'p_0'), null);
-    // a server that predates `losses` cannot tell the helper's 0 from the leaker's N — guess nothing, let the own box run
-    assert.equal(uniteResultBox({ through: 3, helpers: ['p_1'], leakers: ['p_0'] }, 'p_0'), null);
-    assert.equal(uniteResultBox({ through: 0, helpers: ['p_1'] }, 'p_1'), null);
+    // a server that predates `losses` still gets the verdict — and never the own battle's box, which would bill this
+    // player for leaks the 联防 removed (the half-deployed-server bug: 作战结束 + the player's own leak count)
+    const noLosses = uniteResultBox({ through: 3, helpers: ['p_1'], leakers: ['p_0'] }, 'p_0');
+    assert.equal(noLosses.sub, '联防失败：还有 3 只突破防线', 'the verdict without an LP claim');
+    assert.equal(noLosses.tone, 'orange', 'no LP known → not read as a loss');
+    assert.equal(uniteResultBox({ through: 0, helpers: ['p_1'], leakers: ['p_0'] }, 'p_1').sub, '联防成功');
   });
   test('round result box: the official text, mint without a loss and red with one', () => {
     assert.deepEqual(roundResultBox(0), { title: '作战结束', micro: 'BATTLE OVER', tone: 'mint', sub: '全员无伤！', duration: RESULT_BOX_MS });
