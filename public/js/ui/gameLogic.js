@@ -926,7 +926,15 @@ const TERRAIN_TIPS = Object.freeze({
       ].filter(Boolean);
     },
   },
-  smog: { name: '排气格栅', tag: '特殊地形', lines: () => ['站在排气格栅上的干员不会被敌方的远程攻击选中'] },
+  smog: {
+    name: '排气格栅', tag: '特殊地形',
+    // the sim gives the tile's buff `flags: { stealth: true }` (devices.js enterTerrain): enemy ranged targeting
+    // skips it like 隐匿 — and, like 隐匿, it does NOT stop the enemy it blocks from attacking it (PRTS 隐匿).
+    lines: () => [
+      '站在排气格栅上的干员不会被敌方的远程攻击选中（效果相当于隐匿）',
+      '但挡住敌人的干员仍会被它攻击到',
+    ],
+  },
   deepsea: {
     name: '深水区', tag: '特殊地形',
     lines: (st) => {
@@ -940,6 +948,9 @@ const TERRAIN_TIPS = Object.freeze({
       if (aspd) mods.push(`攻击速度 ${pctText(aspd)}`);
       if (move && move !== 1) mods.push(`移动速度 ×${move}`);
       if (mods.length) out.push(mods.join('、'));
+      // devices.js tickDeepsea: sourceless true damage tagged 'dot' / 'periodic' / 'deepsea' — deliberately NOT 'terrain'
+      // (环境伤害, which is what 活性源石's tick is): it is nobody's damage, so no 干员's 增伤 / 穿透 / 装备 applies.
+      out.push('溺水伤害属于无来源伤害（不吃干员的增伤、穿透与装备加成），也不归类为环境伤害');
       out.push('拒绝部署（特制水上平台可以让这一格变得可部署）');
       return out;
     },

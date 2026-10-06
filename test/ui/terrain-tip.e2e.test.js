@@ -117,4 +117,56 @@ describe('special terrain tip in the browser', { skip: !ENABLED && 'set SP_E2E=1
     assert.deepEqual(problems, []);
     await page.close();
   });
+
+  test('Final Assault prep: the tap reports the BOARD tile, so the boss field explains ITS tile (review on #185)', async () => {
+    const { page, problems } = await open('/dev/game-mock.html?phase=PREP&variant=boss&render=engine', { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => !!globalThis.__SP_VIEW__?.tileScreen, { timeout: 30000 });
+    await page.waitForFunction(() => globalThis.__SP_VIEW__.raw.prepField?.().kind === 'bossPrep', { timeout: 15000 });
+    await sleep(1200); // camera / models (a deployment with the local board art also builds the 3D board here)
+    // A board tile of the player's half + the stage tile it draws (stage 2–5 shown as board 9–12): the card must be about
+    // the stage tile. Reporting the drawn tile instead (the old groundTile) made the screen convert a second time, which
+    // on this board explains a DIFFERENT tile — or none at all.
+    const target = await page.evaluate(async () => {
+      const { data } = await import('/js/data.js');
+      const gl = await import('/js/ui/gameLogic.js');
+      const S = globalThis.__MOCK__.S();
+      const stage = data.lookup('stages', S.pub.stageId);
+      for (let row = 9; row <= 12; row++) {
+        for (let col = 0; col <= 10; col++) {
+          const [sr, sc] = gl.fieldTile('bossL', row, col);
+          const info = gl.terrainInfo(stage, sr, sc);
+          if (!info) continue;
+          const t = globalThis.__SP_VIEW__.tileScreen(row, col);
+          if (t) return { row, col, sr, sc, name: info.name, x: t.x, y: t.y };
+        }
+      }
+      return null;
+    });
+    assert.ok(target, 'the boss field has a special tile on the player half');
+    // The boss-prep camera is still settling when the board appears (and building the 3D board shifts a machine's timing),
+    // so wait for the tile's screen position to stop moving, and re-read it before each try.
+    const at = () => page.evaluate(([r, c]) => {
+      const t = globalThis.__SP_VIEW__.tileScreen(r, c);
+      return t && { x: t.x, y: t.y };
+    }, [target.row, target.col]);
+    let settled = null;
+    for (let i = 0; i < 40; i++) {
+      const p = await at();
+      if (p && settled && Math.abs(p.x - settled.x) < 1 && Math.abs(p.y - settled.y) < 1) break;
+      settled = p;
+      await sleep(150);
+    }
+    assert.ok(settled, 'the boss-field tile still has a screen position');
+    let text = null;
+    for (let i = 0; i < 3 && text === null; i++) {
+      const p = (await at()) || settled;
+      await page.mouse.click(p.x, p.y);
+      try { await page.waitForSelector('.dpanel', { timeout: 3000 }); } catch { continue; }   // a tap that missed: retry
+      text = await card(page);
+    }
+    assert.ok(text !== null, 'the tap opened the terrain card');
+    assert.match(text, new RegExp(target.name), `board (${target.row},${target.col}) → stage (${target.sr},${target.sc}) is ${target.name}, card: ${text}`);
+    assert.deepEqual(problems, []);
+    await page.close();
+  });
 });

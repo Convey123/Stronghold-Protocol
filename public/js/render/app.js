@@ -1344,11 +1344,15 @@ export async function createFieldView(host, options = {}) {
    * The ground itself was tapped: nothing stands there, so the TILE explains itself — a special terrain tile (活性源石,
    * 沼泽, 排气格栅, 深水区, 红/蓝门, 传送) opens its own card (GitHub issue #184; screens/game.js `tileClick` →
    * gameLogic.terrainInfo, which says nothing about an ordinary floor / road / wall tile).
+   * The tile is picked as a BOARD tile (`pickBoardTile`, i.e. through `prepXf.toBoard`): on a Final Assault / Hidden Core
+   * PREP the board draws the boss field's own rows (stage 2–5 as board 9–12), and the screen maps board → stage once more
+   * with `gameLogic.fieldTile` — reporting the DRAWN tile here would be converted twice and explain the wrong tile
+   * (review on #185).
    */
   function emitTileClick(ev, e) {
-    const t = groundTile(ev.x, ev.y);
-    if (!t) return;
-    emit('tileClick', { row: t.row, col: t.col, x: t.x, y: t.y, button: e.button, clientX: e.clientX, clientY: e.clientY });
+    const t = pickBoardTile(ev.x, ev.y);
+    if (!t || !(t.row >= 0) || !(t.col >= 0)) return;    // outside the board this field draws
+    emit('tileClick', { row: t.row, col: t.col, button: e.button, clientX: e.clientX, clientY: e.clientY });
   }
 
   const onPointerDown = (e) => {

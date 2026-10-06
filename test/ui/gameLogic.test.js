@@ -624,17 +624,20 @@ describe('special terrain tip', () => {
     assert.ok(mire.lines.some((l) => /攻击速度 −5%/.test(l) && /移动速度 −5%/.test(l)));
     assert.ok(mire.lines.some((l) => /重量 ≥ 3 的敌人一次获得 2 层/.test(l)));
     assert.ok(mire.lines.some((l) => /最多 10 层/.test(l)));
-    // 排气格栅 (战场#07)
+    // 排气格栅 (战场#07): the 隐匿-like rule and its limit — the enemy it blocks still hits it (review on #185)
     const smog = at('act2autochess_m03', 'g');
     const smogTip = terrainInfo(smog.st, smog.row, smog.col);
     assert.equal(smogTip.name, '排气格栅');
-    assert.match(smogTip.lines[0], /不会被敌方的远程攻击选中/);
+    assert.match(smogTip.lines[0], /不会被敌方的远程攻击选中（效果相当于隐匿）/);
+    assert.match(smogTip.lines[1], /挡住敌人的干员仍会被它攻击到/);
     // 深水区 (战场#05): drowning numbers, and 拒绝部署 although the level's own buildableType is ALL (grid.js)
     const sea = at('act1autochess_m05', 'd');
     const seaTip = terrainInfo(sea.st, sea.row, sea.col);
     assert.equal(seaTip.name, '深水区');
     assert.ok(seaTip.lines.some((l) => /每秒受到 40 点伤害/.test(l)));
     assert.ok(seaTip.lines.some((l) => /攻击速度 −60%/.test(l) && /移动速度 ×0.6/.test(l)));
+    // …and what that damage IS: sourceless, and not 环境伤害 (devices.js tickDeepsea; review on #185)
+    assert.ok(seaTip.lines.some((l) => /无来源伤害/.test(l) && /不归类为环境伤害/.test(l)));
     assert.ok(seaTip.lines.some((l) => /拒绝部署/.test(l)));
     assert.ok(seaTip.facts.includes('不可部署'));
     // the gates and teleports every stage carries (tile_start / tile_end / tile_telin / tile_telout)
@@ -690,7 +693,7 @@ describe('special terrain tip', () => {
     // a stage whose `special` is missing: the mechanism is still explained, just without the stage's numbers
     const bare = { rows: ['ih'], tiles: stage.tiles };
     assert.deepEqual(terrainInfo(bare, 0, 0).lines, ['在其上的我方单位与经过的敌方单位持续受到伤害']);
-    assert.deepEqual(terrainInfo(bare, 0, 1).lines, ['站在排气格栅上的干员不会被敌方的远程攻击选中']);
+    assert.deepEqual(terrainInfo(bare, 0, 1).lines, ['站在排气格栅上的干员不会被敌方的远程攻击选中（效果相当于隐匿）', '但挡住敌人的干员仍会被它攻击到']);
     // 沼泽 without its parameters falls back to the official template numbers
     const mire = { rows: ['m'], tiles: { m: { tileKey: 'tile_mire', height: 'LOW', buildable: 'ALL', groundPassable: true, special: 'mire' } } };
     assert.match(terrainInfo(mire, 0, 0).lines[0], /每 1 秒获得 1 层/);
