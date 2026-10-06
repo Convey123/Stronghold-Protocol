@@ -395,14 +395,18 @@ function startCombat(phase) {
     if (leakMock) { leftOf('p1', 13); leftOf('p4', 3); pub.players[0].status = 'done'; pub.players[2].status = 'helping'; } else leftOf('p3', 12);
   }
   // 联防 result box (Match.settle → m.public.uniteResult, ui/gameLogic.uniteResultBox): ?phase=SETTLE&variant=unite
-  // pops the official dialog's 全员无伤！ (the leaker p1's enemies were all stopped, so nobody was charged), and
-  // `unite,through` pops 生命值减少 −3 for p1 — the losing leaker — while the helpers stay at 全员无伤！. Without either
-  // variant the SETTLE view carries no uniteResult and the round's own battle result box takes over (battleResultBox).
+  // pops the official dialog's 全员无伤！ (the leaker p1's enemies were all stopped, so nobody was charged),
+  // `unite,through` pops 生命值减少 −3 for the leaker p1, and `unite,through,helper` makes the local player a HELPER
+  // whose teammate paid — that box carries the official title alone (no 全员无伤！). Without any of them the SETTLE view
+  // carries no uniteResult and the round's own battle result box takes over (battleResultBox).
   if (phase === PHASE.SETTLE && VARIANTS.has('unite')) {
     const helpers = ['ai_2', 'p3'], leakers = ['p1', 'p4'];
     pub.uniteResult = VARIANTS.has('through')
       ? { through: 3, helpers, leakers, losses: { p1: 3, p4: 0, ai_2: 0, p3: 0 } }
       : { through: 0, helpers, leakers, losses: { p1: 0, p4: 0, ai_2: 0, p3: 0 } };
+    // `unite,through,helper`: the LOCAL player p1 is one of the helpers — a teammate (p3) leaked and was charged while p1
+    // was not, so the box must NOT say 全员无伤！ (user report 2026-10-06); `unite,through` makes p1 the charged leaker.
+    if (VARIANTS.has('helper')) pub.uniteResult = { through: 3, helpers: ['p1', 'ai_2'], leakers: ['p3'], losses: { p1: 0, ai_2: 0, p3: 4 } };
   }
   const countKill = () => {
     if (phase !== PHASE.UNITE) return;

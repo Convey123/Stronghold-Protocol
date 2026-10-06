@@ -106,27 +106,35 @@ describe('phases', () => {
   });
   test('联防 result box: the official words for the viewer\'s own LP, nothing else', () => {
     const res = { through: 3, helpers: ['p_1', 'p_2'], leakers: ['p_0'], losses: { p_0: 3, p_1: 0, p_2: 0 } };
-    // the helper was spared → the official 全员无伤！ and ONLY that: the remake's own 「联防失败：还有 N 只突破防线」 is
-    // not in the official dialog (review on #112), and the escaped count is on the HUD's tag_miss capsule instead
+    // The helper was spared, but the 联防 DID leak and a teammate paid: 全员无伤！ would claim that teammate was unharmed
+    // too, and the official dialog has no line for it (its 「联防失败：还有 N 只突破防线」 is the remake's own and was
+    // dropped in review on #112) — so the box keeps the official TITLE alone and leaves the escaped count to the HUD's
+    // orange ×N capsule (user report 2026-10-06: 「自己没掉血，但是队友掉血了还是显示全员无伤」).
     const helper = uniteResultBox(res, 'p_1');
     assert.equal(helper.title, '作战结束');
     assert.equal(helper.tone, 'orange', 'it failed but this player was spared');
-    assert.equal(helper.sub, '全员无伤！');
+    assert.equal(helper.sub, '', 'no 全员无伤！ while a teammate was charged');
     // the leaker reads the LP settlement actually charged
     const leaker = uniteResultBox(res, 'p_0');
     assert.equal(leaker.title, '作战结束');
     assert.equal(leaker.tone, 'red');
     assert.equal(leaker.sub, '生命值减少 −3');
-    // nothing got through: the official 全员无伤！ for helper and leaker alike (neither was charged)
+    // nothing got through (through === 0): the round cost nobody anything, so the official 全员无伤！ is true for helper
+    // and leaker alike — that is the ONLY case a 联防 round may say it
     const cleared = { through: 0, helpers: ['p_1', 'p_2'], leakers: ['p_0'], losses: { p_0: 0, p_1: 0, p_2: 0 } };
     assert.deepEqual(uniteResultBox(cleared, 'p_0'), uniteResultBox(cleared, 'p_1'));
     assert.equal(uniteResultBox(cleared, 'p_0').sub, '全员无伤！');
     assert.equal(uniteResultBox(cleared, 'p_0').tone, 'mint');
+    // …and a leaker the 联防 spared reads it too, while one whose own survivors remained is charged and does not
+    const spared = { through: 3, helpers: ['p_1'], leakers: ['p_0', 'p_2'], losses: { p_0: 0, p_2: 2, p_1: 0 } };
+    assert.equal(uniteResultBox(spared, 'p_0').sub, '', 'spared leaker, but the 联防 leaked: no claim');
+    assert.equal(uniteResultBox(spared, 'p_2').sub, '生命值减少 −2');
+    assert.equal(uniteResultBox(spared, 'p_1').sub, '', 'the helper, whose teammate paid');
     // word for word an ordinary round's box — a 联防 only changes where the number comes from (the authority's `losses`)
     assert.deepEqual(uniteResultBox(res, 'p_0'), roundResultBox(3));
     assert.deepEqual(uniteResultBox(cleared, 'p_0'), roundResultBox(0));
     // a spectator (an already-eliminated player) is not in `losses` and must NOT be told 全员无伤！ — that claims a round
-    // they never fought or paid for (review on #112); with the verdict line gone they get the official title alone
+    // they never fought or paid for (review on #112); they get the official title alone (also when the 联防 held)
     assert.equal(uniteResultBox(res, 'nobody').sub, '');
     assert.equal(uniteResultBox(res, undefined).sub, '');
     assert.equal(uniteResultBox(cleared, 'nobody').sub, '');

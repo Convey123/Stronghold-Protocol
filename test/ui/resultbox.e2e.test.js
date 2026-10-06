@@ -5,8 +5,10 @@
 // The box wears the official dialog's words (user request "选择官方文案"): title 作战结束, then the LP THIS player was
 // charged — 全员无伤！ / 生命值减少 −N. A 联防 round reports the authority's own per-player figure (review on #112: the
 // remake's 「联防成功 / 联防失败：还有 N 只突破防线」 line is not in the official dialog and was dropped). Asserted:
-// `?phase=SETTLE&variant=unite` pops it for a leaker the helpers saved (losses.p1 = 0 → 全员无伤！) and `unite,through`
-// for the same leaker charged 3 (→ 生命值减少 −3, NOT the helpers' 0 and not this leaker's own pre-union leak count),
+// `?phase=SETTLE&variant=unite` pops it for a leaker the helpers saved (losses.p1 = 0 → 全员无伤！), `unite,through`
+// for the same leaker charged 3 (→ 生命值减少 −3, NOT the helpers' 0 and not this leaker's own pre-union leak count), and
+// `unite,through,helper` for a HELPER whose teammate paid (→ the official title alone: 全员无伤！ would be a false claim
+// about the teammate, user report 2026-10-06),
 // driving the harness' own COMBAT → SETTLE switcher pops the round's own battle's box, the box is centred and
 // click-through, it closes by itself (and really leaves the DOM), and no scenario logs a console error. The words
 // themselves are unit-tested in test/ui/gameLogic.test.js (uniteResultBox / battleResultBox / roundResultBox) and the
@@ -108,6 +110,20 @@ describe('settlement result box in the browser', { skip: !ENABLED && 'set SP_E2E
     await t.page.screenshot({ path: path.join(OUT, 'resultbox-unite-through.png') });
     assert.deepEqual(t.problems, []);
     await t.page.close();
+
+    // …and the case a player reported (2026-10-06): the local player is a HELPER — the 联防 leaked and a teammate was
+    // charged 4 while they paid nothing. 全员无伤！ would claim that teammate was unharmed, and the official dialog has no
+    // line for a spared helper, so the box carries the official title alone (the escaped count stays on the HUD's ×N).
+    const h = await open('/dev/game-mock.html?shot=1&render=fallback&phase=SETTLE&variant=unite,through,helper');
+    await h.page.waitForSelector('.rdialog', { timeout: 10000 });
+    const spared = await boxState(h.page);
+    assert.equal(spared.title, '作战结束');
+    assert.equal(spared.sub, '', 'no 全员无伤！ while a teammate was charged');
+    assert.ok(spared.classes.includes('rdialog--orange'), `spared tone: ${spared.classes}`);
+    assert.ok(spared.hasText, 'still a real dialog');
+    await h.page.screenshot({ path: path.join(OUT, 'resultbox-unite-helper-spared.png') });
+    assert.deepEqual(h.problems, []);
+    await h.page.close();
   });
 
   test('every battle gets one: COMBAT → SETTLE through the harness switcher pops the official dialog', async () => {

@@ -250,8 +250,9 @@ export function roundResultBox(loss) {
  *
  * The remake's own 「联防成功」 / 「联防失败：还有 N 只突破防线」 verdict line was dropped in review ("官方对话框里没
  * 有…我们这边尽量只用官方文案"): the official dialog reports nothing but one's own target health, and how many got
- * through is already on the HUD's `tag_miss` capsule (§20.6) and in the 联防阶段 banner. `through` therefore only
- * tints the box now, it is no longer printed.
+ * through is already on the HUD's `tag_miss` capsule (§20.6) and in the 联防阶段 banner. `through` is therefore not
+ * printed — but it DOES decide whether 「全员无伤！」 may be said at all (it must be `0`: with enemies through, the
+ * round was not free for everybody, and a helper whose teammate paid must not read that line).
  *
  * A viewer `losses` does not list (a player who was eliminated earlier and is only watching) gets NO LP line — the box
  * is the title alone, never a claim about a round they were not part of. A view without `losses` at all (a server
@@ -267,13 +268,25 @@ export function uniteResultBox(res, selfId) {
   const losses = res?.losses && typeof res.losses === 'object' ? res.losses : null;
   const raw = losses && Object.hasOwn(losses, selfId) ? Number(losses[selfId]) : NaN;
   const loss = Number.isFinite(raw) ? Math.max(0, Math.trunc(raw)) : null;
+  // Official words only, and only when they are TRUE of this round (user report 2026-10-06: a helper saw 全员无伤！ while
+  // the teammate who leaked was still charged).
+  //   全员无伤！      the official's line for a round that cost nobody anything — in a 联防 that is `through === 0`: the
+  //                   joint defence let nothing through, so no participant paid and the words hold for all of them.
+  //   生命值减少 −N   the official's line for a player this round DID charge (the authority's `losses[selfId]`).
+  //   no sub at all   a player the round did not charge while the 联防 still leaked (a helper, whose own battle was
+  //                   perfect — that is why they were chosen — but whose teammate paid). 全员无伤！ would claim the
+  //                   teammate was unharmed too; the official dialog has no other line, so the box keeps the official
+  //                   title alone and leaves the escaped count to the HUD's orange ×N capsule (§20.6), which is where
+  //                   the official shows it live during the 联防 as well.
+  const held = through === 0;
+  const charged = loss != null && loss > 0;
+  const sub = charged ? `生命值减少 −${loss}` : (held && loss != null ? '全员无伤！' : '');
   return {
     title: '作战结束',
     micro: 'BATTLE OVER',
     // mint: the 联防 held. red: it did not and it cost this player. orange: it did not, but this player was spared.
-    tone: through === 0 ? 'mint' : (loss ? 'red' : 'orange'),
-    // official words only, and only for a player the authority actually charged: 全员无伤！ / 生命值减少 −N
-    sub: loss == null ? '' : (loss === 0 ? '全员无伤！' : `生命值减少 −${loss}`),
+    tone: held ? 'mint' : (charged ? 'red' : 'orange'),
+    sub,
     duration: RESULT_BOX_MS,
   };
 }
