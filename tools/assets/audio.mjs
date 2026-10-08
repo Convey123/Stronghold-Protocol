@@ -141,6 +141,59 @@ function firstMatching(banks, event, abilities, ok = () => true) {
 const SKILL_MODE_FILE = /_(d|h|s)\d*\.mp3$/i;
 /** A bank of an operator's normal attack: none of its files belongs to a skill mode. */
 export const normalModeBank = (paths) => Array.isArray(paths) && paths.length > 0 && !paths.some((p) => SKILL_MODE_FILE.test(p));
+/**
+ * The skill mode of a sound file: 'd' / 'h' / 's' for 技能1 / 2 / 3, null for a normal-mode (`_n`) file. The mode letter
+ * is the official naming of a skill's own sounds — it holds for the whole chain of a skill (原声: `p_skill_lzxqlkl_s`
+ * 技能3发动, `p_atk_lzxqlkl_s` 技能3的攻击, `p_imp_…_s` 技能3命中): 司霆惊蛰's three skills have the activation sounds
+ * `_d` / `_h` / `_s` and the matching attack banks `p_atk_lzxqlkl_d1` / `_h` / `_s`, and every operator whose activation
+ * sounds name a mode agrees with its slot (§ pickModeAttacks).
+ */
+export function skillModeLetter(path) {
+  const m = SKILL_MODE_FILE.exec(typeof path === 'string' ? path : '');
+  return m ? m[1].toLowerCase() : null;
+}
+
+/** 技能1 / 2 / 3 → its mode letter, for operators that carry no activation sound to read the letter from. */
+export const SLOT_MODE_LETTER = Object.freeze({ 0: 'd', 1: 'h', 2: 's' });
+
+/**
+ * The per-skill-mode attack bank of one unit: `{ d?: string[], h?: string[], s?: string[] }` (mode letter → paths).
+ *
+ * Why a second table: `pickUnitSfx` builds the operator's NORMAL attack, and for that it refuses every skill-mode file
+ * (`_d` / `_h` / `_s`) — 银灰's S3 swing is not his normal attack. An operator whose library is all skill modes has
+ * therefore no `attack` at all: 司霆惊蛰's banks are `ON_ABILITY_ON…attack.1.2.1` (`p_atk_lzxqlkl_d1`, 技能1),
+ * `…attack.4` (`_h2` / `_h`, 技能2) and `…attack.7` (`_s`, 技能3) — she never has a plain bank, because (解放者) she
+ * only attacks while a skill runs. The official client plays that mode's file during the skill, so the manifest needs it
+ * per skill index (plan.mjs writes `sfx.units[id].attacks`, the client plays it while the skill is active).
+ *
+ * ON_ABILITY_START wins over ON_ABILITY_ON (the order pickUnitSfx prefers), then the plain ability over a numbered
+ * variant, then the numeric order — the same keys as a normal attack, only per mode.
+ * @param {Map<string,string[]>|undefined} banks unit bank table (from indexAudio().unitBanks)
+ * @returns {{ d?: string[], h?: string[], s?: string[] }}
+ */
+export function pickModeAttacks(banks) {
+  const cands = new Map(); // letter → [{ key, paths }]
+  if (!banks || !banks.size) return {};
+  for (const [name, paths] of banks) {
+    const ev = name.startsWith('ON_ABILITY_START.') ? 'ON_ABILITY_START' : name.startsWith('ON_ABILITY_ON.') ? 'ON_ABILITY_ON' : null;
+    if (!ev || !Array.isArray(paths) || !paths.length) continue;
+    const ability = name.slice(ev.length + 1).split('.')[0];
+    if (!/attack|combat/i.test(ability)) continue;
+    const letter = skillModeLetter(paths[0]);
+    if (!letter) continue;
+    const rest = name.slice(ev.length + 1 + ability.length);
+    const numbered = rest ? 1 : 0;                    // 'attack.1.2.1' / 'attack.4' vs the plain 'attack'
+    const rank = `${ev === 'ON_ABILITY_START' ? 0 : 1}${numbered}`;
+    if (!cands.has(letter)) cands.set(letter, []);
+    cands.get(letter).push({ rank, rest, paths });
+  }
+  const out = {};
+  for (const [letter, list] of cands) {
+    list.sort((a, b) => (a.rank !== b.rank ? (a.rank < b.rank ? -1 : 1) : abilityOrder(a.rest, b.rest)));
+    out[letter] = list[0].paths;
+  }
+  return out;
+}
 
 /**
  * Pick role → candidate sound paths for one unit.
