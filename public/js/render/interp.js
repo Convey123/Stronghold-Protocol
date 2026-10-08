@@ -33,7 +33,7 @@
 import { fxForm } from '../../../shared/protocol.js';
 import { ANIM } from '../../../shared/constants.js';
 
-export const TUPLE = Object.freeze({ ID: 0, X: 1, Y: 2, HP: 3, MAXHP: 4, SP: 5, SPMAX: 6, FLAGS: 7, ANIM: 8, EL: 9, EL_FILL: 10, EL_UNTIL: 11, EL_DUR: 12 });
+export const TUPLE = Object.freeze({ ID: 0, X: 1, Y: 2, HP: 3, MAXHP: 4, SP: 5, SPMAX: 6, FLAGS: 7, ANIM: 8, EL: 9, EL_FILL: 10, EL_UNTIL: 11, EL_DUR: 12, NEG: 13 });
 /** The unit was (re)deployed between tuples `a` and the newer `b`: `b` plays the deploy animation, `a` did not (sim snapshot animOf). */
 const redeployed = (a, b) => b[8] === ANIM.DEPLOY && a[8] !== ANIM.DEPLOY;
 /** Element keys a snapshot `elem` entry may carry (server/sim/constants.js ELEMENT_ORDER). */
@@ -88,6 +88,18 @@ export function normalizeSnapshot(snap) {
       if (!Array.isArray(e) || !ELEMENT_KEYS.has(e[1])) continue;
       const tu = units.get(e[0]);
       if (tu && tu.length === 9) tu.push(e[1], clamp(finite(e[2]), 0, 1), finite(e[3]), Math.max(0, finite(e[4])));
+    }
+  }
+  // 业火 我执 (斩业星熊's T1): the negative-HP pool as a share of its cap — the HP bar turns into the red bar
+  // (render/units.js). Appended like the element gauge, so a unit without one keeps the four element slots empty.
+  if (Array.isArray(snap.neg)) {
+    for (const e of snap.neg) {
+      const tu = Array.isArray(e) ? units.get(e[0]) : null;
+      if (!tu) continue;
+      const v = clamp(finite(e[1]), 0, 1);
+      if (tu.length === TUPLE.NEG) tu.push(v);
+      else if (tu.length > TUPLE.NEG) tu[TUPLE.NEG] = v;
+      else tu.push(null, 0, 0, 0, v);
     }
   }
   let down = null;
@@ -265,7 +277,7 @@ export class SnapshotBuffer {
 
   /**
    * Interpolated state at `time` (default renderT). Fills and returns `out` (a Map id → sample object reused
-   * across calls: `{ id, x, y, hp, maxHp, sp, spMax, flags, anim, vx, vy, seen, el, elFill, elUntil, elDur }` —
+   * across calls: `{ id, x, y, hp, maxHp, sp, spMax, flags, anim, vx, vy, seen, el, elFill, elUntil, elDur, neg }` —
    * `el` = the shown element gauge (null: none), see header). Samples of units no longer present are deleted from `out`.
    */
   sample(time = this.renderT, out = new Map()) {
@@ -282,7 +294,7 @@ export class SnapshotBuffer {
     const stamp = A.t;
     for (const [id, a] of A.units) {
       let o = out.get(id);
-      if (!o) { o = { id, x: 0, y: 0, hp: 0, maxHp: 0, sp: 0, spMax: 0, flags: 0, anim: 0, vx: 0, vy: 0, seen: 0, el: null, elFill: 0, elUntil: 0, elDur: 0 }; out.set(id, o); }
+      if (!o) { o = { id, x: 0, y: 0, hp: 0, maxHp: 0, sp: 0, spMax: 0, flags: 0, anim: 0, vx: 0, vy: 0, seen: 0, el: null, elFill: 0, elUntil: 0, elDur: 0, neg: 0 }; out.set(id, o); }
       const b = B ? B.units.get(id) : null;
       if (b) {
         const dx = b[1] - a[1], dy = b[2] - a[2];
@@ -317,6 +329,7 @@ export class SnapshotBuffer {
       o.flags = a[7];
       o.anim = a[8];
       if (a.length > 9) { o.el = a[9]; o.elFill = a[10]; o.elUntil = a[11]; o.elDur = a[12]; } else if (o.el !== null) { o.el = null; o.elFill = 0; o.elUntil = 0; o.elDur = 0; }
+      o.neg = a.length > TUPLE.NEG && Number.isFinite(a[TUPLE.NEG]) ? a[TUPLE.NEG] : 0;   // 我执's pool (0 elsewhere)
       o.seen = stamp;
     }
     for (const id of out.keys()) if (!A.units.has(id)) out.delete(id);

@@ -56,6 +56,7 @@ export const COLORS = Object.freeze({
   rangeStand: 0x4ed8af,
   hpAlly: 0x5fe07a,
   hpAllyLow: 0xe8c547,
+  hpNeg: 0xff4b3e,
   hpEnemy: 0xff4b3e,
   hpBoss: 0xff2d55,
   hpGhost: 0xfff0c8,

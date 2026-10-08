@@ -300,6 +300,40 @@ test('S3 临死模式 (a 主动关闭 only — no strategy of this mode closes i
   }
 });
 
+// 用户报告:「血量低于自身血量时的显示方式，游戏中是绿条被打空以后受到伤害就会涨红条，这里看不到红条」.
+// 官方 UI 把负生命值池画成红条，所以模拟端要把它发给客户端（b.snap 的 `neg` 附属列表；客户端 render/units.js 画红条）。
+test('T1 业火 我执: the negative pool reaches the client as the snapshot\'s `neg` list (the official red bar)', () => {
+  const { h, u } = field({ tier: 6, elite: true, skill: 0, others: [{ uid: 2, chessId: TEXAS, row: 12, col: 9 }] });
+  const e = h.spawn('enemy_dummy', { pos: [10, 8] });
+  h.step();
+  const max = u.s.maxHp;
+  const negOf = () => {
+    const list = h.b.snapshot().neg;
+    return list ? list.find((x) => x[0] === u.id) : undefined;
+  };
+  assert.equal(negOf(), undefined, 'not in 我执: no pool in the snapshot');
+  h.b.dealDamage(e, u, { amount: u.hp + 300, type: 'true' });
+  h.step();
+  assert.ok(u.mem.hsEgo, '已进入 我执');
+  const cap = 2 * max;                      // max_minus_hp_ratio
+  let row = negOf();
+  assert.ok(row, 'the pool is published');
+  approx(row[1], 300 / cap, 'the share of the cap', 0.02);
+  // every later instance grows the bar, and it is capped at the pool's own cap
+  h.b.dealDamage(e, u, { amount: 400, type: 'true' });
+  h.step();
+  row = negOf();
+  approx(row[1], 700 / cap, 'it grew', 0.02);
+  assert.ok(negOf()[1] < 1, 'still below a full pool');
+  // below the floor her HP bar is empty: the red bar is the whole story (the shared with 1 HP ⇒ ≈ 0)
+  assert.ok(u.hp / max < 0.01, 'her green bar is empty by then');
+  // …and it leaves with 我执 (the regeneration clears the pool)
+  assert.ok(h.runUntil(() => !u.mem.hsEgo, 60), '出 我执');
+  h.step();
+  assert.equal(negOf(), undefined, 'no pool, no red bar');
+  done(h);
+});
+
 test('T1 业火 我执: a lethal hit leaves her on the field (HP floor) with the excess as negative HP; later damage goes there (受击回复 SP still), 禁疗 meanwhile; 200 % of max HP knocks her out; 4 s without damage ⇒ 生命回复速度 5 %/s clears it and she leaves 我执', () => {
   for (const [tier, elite] of [[5, false], [6, true]]) {
     const t0 = formOf(tier, elite).talents.find((t) => t.index === 0).bb;

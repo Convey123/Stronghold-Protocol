@@ -179,13 +179,24 @@ export default {
           const capOf = () => num(t0.max_minus_hp_ratio, 2) * unit.s.maxHp;
           const quiet = num(t0['hsgma2_t_1[heal].interval'], 5);
           const regen = num(t0['hsgma2_t_1[heal].hp_recovery_per_sec_by_max_hp_ratio']);
+          /**
+           * Publish the negative-HP pool to the client as `unit.negHp` `{ pool, cap }`: the snapshot's `neg` list turns it
+           * into the **red bar** the HP bar shows in 我执 (her green HP is at the floor, so the bar reads as the pool
+           * filling instead — community report: the remake showed no red bar at all). Null outside 我执.
+           */
+          const syncNeg = () => {
+            const ego = unit.mem.hsEgo;
+            unit.negHp = ego && ego.pool > 0 ? { pool: ego.pool, cap: Math.max(1e-9, capOf()) } : null;
+          };
           const enter = (pool) => {
             unit.mem.hsEgo = { pool: Math.max(0, pool), lastHurt: battle.time };
+            syncNeg();
             battle.addBuff(unit, { key: EGO, status: 'healFree', flags: { noHeal: true, healFree: true }, tags: ['talent'] });
             battle.fx('undying', { x: unit.x, y: unit.y, id: unit.id, talent: 'hsgma2:ego' });
           };
           const leave = () => {
             unit.mem.hsEgo = null;
+            syncNeg();
             battle.removeBuff(unit, EGO);
             battle.removeBuff(unit, EGO_REGEN);
           };
@@ -223,6 +234,7 @@ export default {
           battle.on('tick', () => {
             unit.mem.hsOverflow = false;
             const ego = unit.mem.hsEgo;
+            syncNeg();                     // the bar follows every pool change of this tick (damage, heal, regeneration)
             if (!ego) return;
             if (!up(unit)) { leave(); return; }
             // HP above the 1-HP floor (her regeneration, a heal that ignores 禁疗) clears the pool first

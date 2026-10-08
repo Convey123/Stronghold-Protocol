@@ -37,7 +37,10 @@ export class BattleEvents {
    *   down: [[id, respawnAt, respawnTime, state, row, col]] — operators that left the field waiting to redeploy (isDown): the
    *         game time their respawn timer ends, its length (s), constants.js DOWN_STATE and the tile they lie on (and
    *         come back on: _layBody — where they fell, or their home);
-   *   elem: [[id, element, fill, cooldownEnd, cooldown]] — the element gauge each unit shows (damage.js elementView).
+   *   elem: [[id, element, fill, cooldownEnd, cooldown]] — the element gauge each unit shows (damage.js elementView);
+   *   neg: [[id, fill]] — the negative-HP pool a unit holds as a share of its cap (`unit.negHp`, 业火 我执: 斩业星熊's T1
+   *         keeps her on the field past 0 HP and counts the damage into a pool; the client draws it as the red bar the
+   *         drained HP bar turns into, render/interp.js `neg`).
    */
   snapshot() {
     const snap = {
@@ -67,6 +70,13 @@ export class BattleEvents {
       if (v) (elem || (elem = [])).push([u.id, v[0], v[1], v[2], v[3]]);
     }
     if (elem) snap.elem = elem;
+    let neg = null;
+    for (const u of this.units) {
+      if (!u.alive || !u.deployed || u.hidden || !u.negHp) continue;
+      const v = u.negHp.pool / Math.max(1e-9, u.negHp.cap);
+      if (v > 0) (neg || (neg = [])).push([u.id, r2(Math.min(1, v))]);
+    }
+    if (neg) snap.neg = neg;
     return snap;
   }
 

@@ -407,6 +407,7 @@ export class UnitView {
     this.visFacing = this.isEnemy ? -1 : this.facing;
     this.hp = Number(info.maxHp) || 1; this.maxHp = Number(info.maxHp) || 1; this.ghostHp = this.hp;
     this.sp = 0; this.spMax = 0;
+    this.neg = 0;                       // 我执's negative-HP pool as a share of its cap (0 for every other unit)
     this.flags = 0; this.anim = ANIM.IDLE;
     this.statuses = new Set();
     this.alive = true;
@@ -649,6 +650,8 @@ export class UnitView {
     this.hpBg = bar(P, h, COLORS.hpBack, 0.85);
     this.hpGhost = bar(P, h, COLORS.hpGhost, 0.9);
     this.hpFill = bar(P, h, this.isEnemy ? (this.isBoss ? COLORS.hpBoss : COLORS.hpEnemy) : COLORS.hpAlly);
+    // 业火 我执 (斩业星熊's T1): the negative-HP pool, drawn as the red bar the drained HP bar turns into
+    this.negFill = bar(P, h, COLORS.hpNeg);
     this.shieldBar = bar(P, h, COLORS.shield, 0.95);
     this.spBg = bar(P, h, COLORS.hpBack, 0.85);
     this.spFill = bar(P, h, COLORS.sp);
@@ -658,7 +661,7 @@ export class UnitView {
     this.spGlow.blendMode = P.BLEND_MODES.ADD;
     h.addChild(this.spGlow);
     // nothing shows until the first HUD update decides (a culled or prep view never draws bars)
-    for (const b of [this.hpBg, this.hpGhost, this.hpFill, this.shieldBar, this.spBg, this.spFill, this.spGlow]) b.visible = false;
+    for (const b of [this.hpBg, this.hpGhost, this.hpFill, this.negFill, this.shieldBar, this.spBg, this.spFill, this.spGlow]) b.visible = false;
     this.chip = null;
     // operators only: summon tokens have no tier (hand and field alike)
     if (!this.isEnemy && !this.isToken && this.info.kind !== 'device') {
@@ -744,6 +747,7 @@ export class UnitView {
     if (hp < this.hp - 0.5 && this.isBoss) this.shake = 0.25;
     this.hp = hp;
     this.sp = s.sp; this.spMax = s.spMax;
+    this.neg = s.neg > 0 ? clamp(s.neg, 0, 1) : 0;
     const prevFlags = this.flags;
     this.flags = s.flags | 0;
     this.anim = s.anim | 0;
@@ -1174,6 +1178,11 @@ export class UnitView {
       this.hpFill.position.set(x0, cy); this.hpFill.width = bw * k; this.hpFill.height = bh;
       if (!this.isEnemy) this.hpFill.tint = k < 0.3 ? COLORS.hpAllyLow : COLORS.hpAlly;
     }
+    // 业火 我执: her HP sits at the floor and every later damage instance counts into a negative pool — the official
+    // bar shows that pool in red, filling as she takes damage (the green bar is empty by then)
+    const neg = showHp ? this.neg : 0;
+    this.negFill.visible = neg > 0;
+    if (neg > 0) { this.negFill.position.set(x0, cy); this.negFill.width = bw * neg; this.negFill.height = bh; }
     const shielded = showHp && (this.flags & UF.SHIELD);
     this.shieldBar.visible = !!shielded;
     if (shielded) { this.shieldBar.position.set(x0, cy - bh / 2 - 1); this.shieldBar.width = bw; this.shieldBar.height = Math.max(1.5, bh * 0.35); }
