@@ -63,6 +63,49 @@ export function windUpPlan(loopDur, hit, interval, lead) {
 }
 
 /** Whether any skin of the skeleton data has a clipping attachment (pixi-spine AttachmentType.Clipping = 6). */
+/**
+ * Clipping attachments a skeleton data carries, as `{ slot, end }` spine slot indexes (GitHub #177). A clipping
+ * attachment masks every slot drawn after the one it sits on, up to and including `endSlot` (Spine's
+ * `ClippingAttachment.endSlot`); the fallback below needs that range. `end` falls back to the next clipping slot
+ * minus one, else the last slot, so a runtime that hands out no `endSlot` still yields a usable range.
+ */
+export function clipRanges(data) {
+  const out = [];
+  try {
+    const slots = data?.slots || [];
+    const endOf = (a) => {
+      const e = a?.endSlot;
+      const i = e && Number.isInteger(e.index) ? e.index : (Number.isInteger(e) ? e : null);
+      return i;
+    };
+    const isClip = (a) => !!a && (a.type === 6 || a.constructor?.name === 'ClippingAttachment'
+      || ('endSlot' in a && 'vertices' in a && !('uvs' in a)));
+    for (const slot of slots) {
+      const att = slot.attachment || (data.defaultSkin && data.defaultSkin.getAttachment
+        ? data.defaultSkin.getAttachment(slot.index, slot.name) : null);
+      if (!isClip(att)) continue;
+      out.push({ slot: slot.index, end: endOf(att) });
+    }
+  } catch { /* unknown runtime shape: no ranges */ }
+  for (let i = 0; i < out.length; i++) {
+    if (out[i].end == null) out[i].end = i + 1 < out.length ? out[i + 1].slot - 1 : (data?.slots?.length ?? 1) - 1;
+  }
+  return out;
+}
+
+/**
+ * Is (x, y) inside the closed polygon `pts` (a flat `[x0, y0, x1, y1, …]` array of `n` points)? Standard ray casting —
+ * the fallback uses the centre of a masked slot, so the answer is exact for the 4-vertex quads the eyelids use.
+ */
+export function pointInPolygon(x, y, pts, n) {
+  let inside = false;
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const xi = pts[i * 2], yi = pts[i * 2 + 1], xj = pts[j * 2], yj = pts[j * 2 + 1];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
 export function hasClipping(data) {
   try {
     for (const skin of data?.skins || []) {
@@ -96,6 +139,10 @@ export class SpineActor {
      */
     this.clipped = hasClipping(spineData);
     this.clipOn = true;
+    /** Ranges of every clipping attachment (`clipRanges`), for the no-stencil fallback below. */
+    this.clipRanges = this.clipped ? clipRanges(spineData) : null;
+    this._clipHidden = null;      // slot indexes this actor hid itself (only those are shown again)
+    this._clipPoly = null;        // reusable world-vertex buffer for a clip polygon
     if (this.clipped) {
       const sp = this.spine;
       const orig = typeof sp.createGraphics === 'function' ? sp.createGraphics.bind(sp) : null;
@@ -134,6 +181,7 @@ export class SpineActor {
     on = !!on;
     if (!this.clipped || on === this.clipOn) return;
     this.clipOn = on;
+    if (on && this._clipHidden) this._showClipHidden();   // the stencil takes over (GitHub #177 fallback)
     for (const slot of this.spine?.skeleton?.slots || []) {
       if (!slot.clippingContainer) continue;
       slot.clippingContainer.mask = on ? slot.currentGraphics || null : null;
@@ -546,6 +594,80 @@ export class SpineActor {
     if (!this.frozen) {
       try { this.spine.update(dt); } catch { /* a broken skeleton must not stop the frame */ }
     }
+    if (this.clipped) this._eyeMaskFallback();
+  }
+
+  /**
+   * The eyelid mask without a stencil (GitHub #177, author's diagnosis: 「场上带裁剪的骨架多时，眼球的裁剪会被关掉，
+   * 倒地和眨眼时又没有另外藏起眼球」). The roster's clipped slots are eyelids: the clip polygon is the eye's opening, so
+   * when the eye closes the polygon collapses/moves off the eyeball and the mask — not the art — is what hides it. The
+   * client applies stencil masks to a lone clipped skeleton at high quality only (render/app.js `pickClipping`), so in a
+   * real battle nothing hid the eyeball and it showed through the closed lid (measured on the skeleton data: 佩佩's
+   * knockdown frame keeps 75 % of the eye's pixels as eyeball, 仇白 61 %).
+   *
+   * While the mask is off, this hides a masked slot on its own when its centre leaves the clip polygon — the official
+   * mask removes (almost) all of it in exactly those frames (佩佩's knockdown 2 % left, 仇白's 0 %, against 70–86 %
+   * visible with the eye open), and it does nothing at all while the eye is open, so no eye ever disappears by mistake.
+   * Only slots this actor hid are shown again; a slot the animation hid itself is left alone.
+   */
+  _eyeMaskFallback() {
+    try {
+      if (this.clipOn || !this.clipRanges || !this.clipRanges.length) {
+        if (this._clipHidden) this._showClipHidden();
+        return;
+      }
+      const skel = this.spine?.skeleton;
+      if (!skel || !skel.slots) return;
+      for (const range of this.clipRanges) {
+        const clipSlot = skel.slots[range.slot];
+        const clipAtt = clipSlot && clipSlot.attachment;
+        const cn = clipAtt ? clipAtt.worldVerticesLength | 0 : 0;
+        if (!(cn >= 6)) { this._restoreClipRange(range.slot, range.end); continue; }
+        if (!this._clipPoly || this._clipPoly.length < cn) this._clipPoly = new Float32Array(cn);
+        const poly = this._clipPoly;
+        clipAtt.computeWorldVertices(clipSlot, 0, cn, poly, 0, 2);
+        for (let i = range.slot + 1; i <= range.end && i < skel.slots.length; i++) {
+          const slot = skel.slots[i];
+          const att = slot.attachment;
+          const n = att ? att.worldVerticesLength | 0 : 0;
+          if (!(n >= 4)) { this._restoreClipSlot(i); continue; }
+          const out = this._clipPoint || (this._clipPoint = new Float32Array(64));
+          const buf = n <= out.length ? out : (this._clipPoint = new Float32Array(n));
+          att.computeWorldVertices(slot, 0, n, buf, 0, 2);
+          let cx = 0, cy = 0;
+          const count = n >> 1;
+          for (let k = 0; k < n; k += 2) { cx += buf[k]; cy += buf[k + 1]; }
+          cx /= count; cy /= count;
+          if (pointInPolygon(cx, cy, poly, cn >> 1)) this._restoreClipSlot(i);
+          else this._hideClipSlot(i);
+        }
+      }
+    } catch { /* a broken skeleton must never stop the frame */ }
+  }
+
+  /** Hide a masked slot (its eyeball) while the clip polygon no longer covers it. */
+  _hideClipSlot(index) {
+    const slot = this.spine?.skeleton?.slots?.[index];
+    if (!slot || !slot.currentSprite) return;
+    slot.currentSprite.visible = false;
+    (this._clipHidden || (this._clipHidden = new Set())).add(index);
+  }
+
+  /** Show a slot again — but only when this actor is the one that hid it. */
+  _restoreClipSlot(index) {
+    if (!this._clipHidden || !this._clipHidden.delete(index)) return;
+    const slot = this.spine?.skeleton?.slots?.[index];
+    if (slot && slot.currentSprite) slot.currentSprite.visible = true;
+  }
+
+  _restoreClipRange(from, to) { for (let i = from + 1; i <= to; i++) this._restoreClipSlot(i); }
+
+  _showClipHidden() {
+    for (const index of this._clipHidden) {
+      const slot = this.spine?.skeleton?.slots?.[index];
+      if (slot && slot.currentSprite) slot.currentSprite.visible = true;
+    }
+    this._clipHidden = null;
   }
 
   /** Model height in skeleton units (setup-pose bounds, else a chibi default). */
