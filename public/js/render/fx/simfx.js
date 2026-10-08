@@ -47,10 +47,11 @@ export class FxSim {
   /**
    * b.ev 'fx': every kind the sim / content emits has a visual (FX_KINDS archetypes: blast, shell, zone, telegraph,
    * heal, sp, shield, shatter, summon, vanish, blink, move, wave, mark, reticle, buff, lift, sleep, crit, dodge,
-   * counter, dp, coin, crate, down, beam, bolt, strike, volley, pillar, lp, chill, element, flame), except kinds whose
+   * counter, dp, coin, crate, down, beam, bolt, strike, volley, pillar, lp, chill, element, flame, qi), except kinds whose
    * archetype is 'none' (hitCap: a leader hit cancelled by 限伤 draws nothing); unknown kinds get a generic sparkle. `extra` keys used: id (anchor unit — or the shooter of a `pt` kind), r | radius, dur | duration,
    * t (shell flight, game s), src / from / to / target / targets (unit ids), fx, fy / fromX, fromY / tx, ty (positions),
-   * element, n, scale, kind, tiles, hold ('lock': the reticle waits while the shooter's skill runs).
+   * element, n, scale, kind, tiles, hold ('lock': the reticle waits while the shooter's skill runs), dr / dc (a
+   * direction in tiles: 'qi' points its blade that way).
    */
   simFx(kind, x, y, extra) {
     const ex = extra && typeof extra === 'object' ? extra : {};
@@ -166,6 +167,23 @@ export class FxSim {
         for (let i = 0; i < (this.quality === 'low' ? 2 : 5); i++) {
           this.particle('smoke', g.x + (Math.random() - 0.5) * g.s * 0.5, g.y, { add: false, tint: 0x6b6358, vx: (Math.random() - 0.5) * g.s * 0.6, vy: -g.s * 0.2, drag: 2, life: 0.5, s0: g.s / 128 * 0.25, s1: g.s / 128 * 0.55, a0: 0.45, a1: 0 });
         }
+        break;
+      }
+      // a travelling blade (赤刃明霄陈 S3's 龙剑气): a short trail from where it was to where it is, plus a crescent head
+      // turned the way it moves — the sim sends one of these every 0.12 s, and the trail outlives that gap so the
+      // events join into one sweeping wave
+      case 'qi': {
+        const fx0 = num(ex.fromX, NaN), fy0 = num(ex.fromY, NaN);
+        if (Number.isFinite(fx0) && Number.isFinite(fy0)) this.streak(fx0, fy0, at.x, at.y, at.z + 0.35, col, 0.34);
+        const dr = num(ex.dr, NaN), dc = num(ex.dc, NaN);
+        let rot = 0;
+        if (Number.isFinite(dr) && Number.isFinite(dc) && (dr || dc)) {
+          const q = cam.project(at.x + dc * 0.5, at.y + dr * 0.5, at.z + 0.35, this._q);
+          // the `slash` sprite's crescent bulges along its local −y, so this turns that edge onto the travel direction
+          rot = Math.atan2(q.x - p.x, -(q.y - p.y));
+        }
+        this.particle('slash', p.x, p.y, { tint: col, life: 0.3, s0: s / 128 * 1.3, s1: s / 128 * 2.0, a0: 0.9, a1: 0, rot });
+        this.particle('glow', p.x, p.y, { tint: col, life: 0.26, s0: s / 128 * 0.8, s1: s / 128 * 1.5, a0: 0.55, a1: 0 });
         break;
       }
       case 'wave': {
