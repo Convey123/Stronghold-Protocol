@@ -157,25 +157,30 @@ export function skillModeLetter(path) {
 export const SLOT_MODE_LETTER = Object.freeze({ 0: 'd', 1: 'h', 2: 's' });
 
 /**
- * The per-skill-mode attack bank of one unit: `{ d?: string[], h?: string[], s?: string[] }` (mode letter → paths).
+ * The per-skill-mode bank of one unit, by mode letter: `{ d?: string[], h?: string[], s?: string[] }`.
  *
- * Why a second table: `pickUnitSfx` builds the operator's NORMAL attack, and for that it refuses every skill-mode file
- * (`_d` / `_h` / `_s`) — 银灰's S3 swing is not his normal attack. An operator whose library is all skill modes has
- * therefore no `attack` at all: 司霆惊蛰's banks are `ON_ABILITY_ON…attack.1.2.1` (`p_atk_lzxqlkl_d1`, 技能1),
- * `…attack.4` (`_h2` / `_h`, 技能2) and `…attack.7` (`_s`, 技能3) — she never has a plain bank, because (解放者) she
- * only attacks while a skill runs. The official client plays that mode's file during the skill, so the manifest needs it
- * per skill index (plan.mjs writes `sfx.units[id].attacks`, the client plays it while the skill is active).
+ * Why a second table: `pickUnitSfx` builds the operator's NORMAL attack / impact, and for that it refuses every
+ * skill-mode file (`_d` / `_h` / `_s`) — 银灰's S3 swing is not his normal attack. An operator whose library is all
+ * skill modes has therefore no normal bank at all: 司霆惊蛰's attack banks are `ON_ABILITY_ON…attack.1.2.1`
+ * (`p_atk_lzxqlkl_d1`, 技能1), `…attack.4` (`_h2` / `_h`, 技能2) and `…attack.7` (`_s`, 技能3) — she never has a plain
+ * bank, because (解放者) she only attacks while a skill runs. The official client plays that mode's own files during the
+ * skill, so the manifest needs them per skill index (plan.mjs writes `sfx.units[id].attacks` / `hits` = the mode's
+ * attack / impact sound, public/js/audio.js plays them while that skill is active).
  *
- * ON_ABILITY_START wins over ON_ABILITY_ON (the order pickUnitSfx prefers), then the plain ability over a numbered
- * variant, then the numeric order — the same keys as a normal attack, only per mode.
+ * `events` picks which banks count: the attack is cast / held (`ON_ABILITY_START` preferred over `ON_ABILITY_ON`, the
+ * order pickUnitSfx prefers), the impact is the hit (`ON_ABILITY_HIT`). Among equals the plain ability wins over a
+ * numbered variant, then the numeric order. 赤刃明霄陈 S3 (the official banks, `attack.3`):
+ * `ON_ABILITY_START` → `p_atk_hljdswd_s` (the swing: different from her normal `p_atk_hljdswd_n`),
+ * `ON_ABILITY_HIT` → `p_imp_hljdswd_s` (the slash's impact: different from `p_imp_hljdswd_n`).
  * @param {Map<string,string[]>|undefined} banks unit bank table (from indexAudio().unitBanks)
+ * @param {string[]} events official event prefixes to read
  * @returns {{ d?: string[], h?: string[], s?: string[] }}
  */
-export function pickModeAttacks(banks) {
-  const cands = new Map(); // letter → [{ key, paths }]
+export function pickModeBanks(banks, events) {
+  const cands = new Map(); // letter → [{ rank, rest, paths }]
   if (!banks || !banks.size) return {};
   for (const [name, paths] of banks) {
-    const ev = name.startsWith('ON_ABILITY_START.') ? 'ON_ABILITY_START' : name.startsWith('ON_ABILITY_ON.') ? 'ON_ABILITY_ON' : null;
+    const ev = events.find((e) => name.startsWith(e + '.'));
     if (!ev || !Array.isArray(paths) || !paths.length) continue;
     const ability = name.slice(ev.length + 1).split('.')[0];
     if (!/attack|combat/i.test(ability)) continue;
@@ -183,7 +188,7 @@ export function pickModeAttacks(banks) {
     if (!letter) continue;
     const rest = name.slice(ev.length + 1 + ability.length);
     const numbered = rest ? 1 : 0;                    // 'attack.1.2.1' / 'attack.4' vs the plain 'attack'
-    const rank = `${ev === 'ON_ABILITY_START' ? 0 : 1}${numbered}`;
+    const rank = `${events.indexOf(ev)}${numbered}`;
     if (!cands.has(letter)) cands.set(letter, []);
     cands.get(letter).push({ rank, rest, paths });
   }
@@ -194,6 +199,16 @@ export function pickModeAttacks(banks) {
   }
   return out;
 }
+
+/** The per-skill-mode ATTACK bank of one unit (the swing / cast while that skill runs) — see pickModeBanks. */
+export const pickModeAttacks = (banks) => pickModeBanks(banks, ['ON_ABILITY_START', 'ON_ABILITY_ON']);
+
+/**
+ * The per-skill-mode IMPACT bank of one unit (the hit sound while that skill runs): 赤刃明霄陈's S3 slashes hit with
+ * `p_imp_hljdswd_s`, not her normal `p_imp_hljdswd_n`. A mode without an `ON_ABILITY_HIT` bank keeps the unit's normal
+ * impact (司霆惊蛰's S3 has none: only its 技能2 swings `_h` and impacts `_h`).
+ */
+export const pickModeHits = (banks) => pickModeBanks(banks, ['ON_ABILITY_HIT']);
 
 /**
  * Pick role → candidate sound paths for one unit.

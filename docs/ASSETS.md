@@ -202,7 +202,8 @@ All paths are URL paths relative to the site root, for example `/assets/char/ava
                 goodEvaluation, load, start, matchSucceed, matchFail, matchCancel, joinRoom },
       battle: { deploy, tokenDeploy, charDie, enemyDie, enemyDieHeavy, enemyHit, heal, leak, win, lose, killCoin },
       units:  { [charId|tokenId|enemyId]: { attack?, hit?, skill?, skills?: {[skillIndex]: url},
-                attacks?: {[skillIndex]: url}, die?, born?, mix?: { [attack|hit|die|born]: { p?, vol? } } } }
+                attacks?: {[skillIndex]: url}, hits?: {[skillIndex]: url}, die?, born?,
+                mix?: { [attack|hit|die|born]: { p?, vol? } } } }
     }
   },
   // units' mix (tools/assets/audio.mjs bankMix; community report #30): the official bank of a role's sound — `p` = the weight
@@ -216,12 +217,14 @@ All paths are URL paths relative to the site root, for example `/assets/char/ava
   // the unsuffixed ability) never takes a numbered variant `attack.N` — a skill mode's, whatever its file name (银灰's S3
   // swing p_atk_silver_n, community report of 2026-10-06); one that numbers its default mode (`attack.0` …) keeps the
   // numbered order; enemies and tokens take the first attack-like bank
-  // units' attacks (tools/assets/audio.mjs pickModeAttacks): the attack sound of a SKILL MODE, per skill index — the
-  // `_d` / `_h` / `_s` file of that skill's own bank, read as 技能1 / 2 / 3 (the letter an operator's activation sounds
-  // use: `p_skill_lzxqlkl_s` = 技能3 发动, `p_atk_lzxqlkl_s` = 技能3 的攻击). public/js/audio.js plays it while that
-  // skill is active (the `['skill', id, 1]` / `0` events) and the normal `attack` bank outside it — so 司霆惊蛰 (解放者:
-  // she only attacks while a skill runs, and every bank of hers is a numbered ability variant — no normal-mode bank at
-  // all) is no longer silent when she attacks (2026-10-08)
+  // units' attacks / hits (tools/assets/audio.mjs pickModeAttacks / pickModeHits): the swing and the impact of a SKILL
+  // MODE, per skill index — the `_d` / `_h` / `_s` file of that skill's own bank (ON_ABILITY_START / ON for the swing,
+  // ON_ABILITY_HIT for the impact), read as 技能1 / 2 / 3 (the letter an operator's activation sounds use:
+  // `p_skill_lzxqlkl_s` = 技能3 发动, `p_atk_lzxqlkl_s` = 技能3 的攻击). public/js/audio.js plays them while that skill
+  // is active (the `['skill', id, 1]` / `0` events) and the normal `attack` / `hit` outside it — so 司霆惊蛰 (解放者: she
+  // only attacks while a skill runs, and every bank of hers is a numbered ability variant — no normal-mode bank at all)
+  // is no longer silent when she attacks, and 赤刃明霄陈's S3 slashes swing `p_atk_hljdswd_s` / land `p_imp_hljdswd_s`
+  // instead of her normal `_n` pair (2026-10-08)
   fonts: { css: '/fonts/fonts.css', faces: { [name]: { family, weight, woff2?, original } } }
 }
 ```

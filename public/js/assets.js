@@ -227,8 +227,9 @@ export function bgmEntry(m, kind) {
 export const sfxUrl = (m, group, key) => str(get(get(get(get(m, 'audio'), 'sfx'), str(group) || ''), str(key) || ''));
 
 /**
- * Per-unit SFX: kind 'attack' | 'hit' | 'skill' | 'die' | 'born'; `skillIndex` picks `skills[i]` — and, for an attack,
- * `attacks[i]` (the running skill's own file, tools/assets/audio.mjs pickModeAttacks) — when the manifest has them.
+ * Per-unit SFX: kind 'attack' | 'hit' | 'skill' | 'die' | 'born'; `skillIndex` picks `skills[i]` and — for an attack or
+ * an impact — `attacks[i]` / `hits[i]` (the running skill's own files, tools/assets/audio.mjs pickModeAttacks /
+ * pickModeHits) when the manifest has them.
  */
 export function unitSfxUrl(m, id, kind, skillIndex) {
   const u = get(get(get(get(m, 'audio'), 'sfx'), 'units'), str(id) || '') || get(get(get(get(m, 'audio'), 'sfx'), 'units'), baseCharId(id) || '');
@@ -237,8 +238,9 @@ export function unitSfxUrl(m, id, kind, skillIndex) {
     const s = str(u.skills[skillIndex]);
     if (s) return s;
   }
-  if (kind === 'attack' && Number.isInteger(skillIndex) && isObj(u.attacks)) {
-    const a = str(u.attacks[skillIndex]);
+  const per = kind === 'attack' ? u.attacks : kind === 'hit' ? u.hits : null;
+  if (Number.isInteger(skillIndex) && isObj(per)) {
+    const a = str(per[skillIndex]);
     if (a) return a;
   }
   return str(u[kind]);

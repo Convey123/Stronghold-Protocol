@@ -49,6 +49,10 @@
 //   per skill index (`attacks`, tools/assets/audio.mjs pickModeAttacks) and it plays while the skill is active, from the
 //   `['skill', id, 1]` / `0` events; a unit with a normal bank too (能天使 S2 过载模式, 史尔特尔 S2) keeps that bank
 //   outside the skill. Being the official file of that very skill, it is not the normalAttackSfx case above.
+// - …and its impact (`hits`): a mode's swing is not always the whole difference — 赤刃明霄陈 S3's slashes swing
+//   p_atk_hljdswd_s AND land p_imp_hljdswd_s, while her normal attack uses p_atk_hljdswd_n / p_imp_hljdswd_n
+//   (report 「开启三技能后斩击音效应该和普通攻击不一样」). Same mechanism and the same window: the `hit` of an attack
+//   aimed while the skill ran — the attacker's state travels with `lastAttacker`.
 // - The official bank mix of a unit's own attack / hit / die / born sound (`mix`, tools/assets/audio.mjs bankMix; community
 //   report #30): it plays with chance `p` — 猎狗pro / 深池侦察犬's attack bank is 80 % silence, so they bark on about one
 //   attack in five (never replaced by the generic enemy sound) — at its base gain × `vol`, capped at 1: an official volume
@@ -528,7 +532,8 @@ export class AudioManager {
     this.bgmToken = 0;
     this.units = new Map();   // battle unit id → defId
     this.pendingSkill = new Map(); // unit id → the 'skill' tuple that arrived before the unit was known (see _track)
-    this.lastAttacker = new Map(); // target id → { def, at } of the hostile attack last aimed at it (its impact sound)
+    this.lastAttacker = new Map(); // target id → { def, at, skillIndex, skillActive } of the hostile attack aimed at it (its impact sound,
+                                   // including the running skill's own `hits` — 赤刃明霄陈 S3's slash)
     this.consumed = new Set();     // summons used up by their own effect (香槟炸弹 exploded): no death sound
     this.installed = false;
     this._unlock = this._unlock.bind(this);
@@ -877,7 +882,7 @@ export class AudioManager {
    * @param {'attack'|'hit'|'skill'|'die'|'born'} kind
    * @param {number|string} unitId battle unit id (cooldown key)
    * @param {number} [skillIndex] the unit's equipped skill slot (0-based)
-   * @param {boolean} [skillActive] whether that skill runs right now (`attacks[skillIndex]` needs it, see header)
+   * @param {boolean} [skillActive] whether that skill runs right now (`attacks` / `hits` need it, see header)
    * @returns {boolean} whether a unit-specific sound exists
    */
   unit(defId, kind, unitId, skillIndex, skillActive = false) {
@@ -885,9 +890,11 @@ export class AudioManager {
       const u = this.getManifest()?.audio?.sfx?.units?.[defId];
       // DESIGN §16: the equipped skill's own ON_SKILL_START sound (`skills[index]`) when the manifest has it
       const own = kind === 'skill' && Number.isInteger(skillIndex) && u?.skills ? u.skills[skillIndex] : null;
-      // the running skill's own attack sound (header); only while it runs — otherwise 能天使 S2's file would ring on
-      // every normal attack of hers (exactly what normalAttackSfx keeps out)
-      const mode = kind === 'attack' && skillActive && Number.isInteger(skillIndex) && u?.attacks ? u.attacks[skillIndex] : null;
+      // the running skill's own swing / impact (header); only while it runs — otherwise 能天使 S2's file would ring on
+      // every normal attack of hers (exactly what normalAttackSfx keeps out). 赤刃明霄陈 S3: `attacks[2]` = the S3 swing,
+      // `hits[2]` = the S3 slash's impact.
+      const table = kind === 'attack' ? u?.attacks : kind === 'hit' ? u?.hits : null;
+      const mode = skillActive && Number.isInteger(skillIndex) && table ? table[skillIndex] : null;
       const url = typeof own === 'string' ? own : typeof mode === 'string' ? mode : u?.[kind];
       if (typeof url !== 'string') return false;
       // a skill-mode file is fine here when it IS the running skill's (mode); the gate is for normal attacks
@@ -1052,16 +1059,16 @@ export class AudioManager {
           if (!src) continue;
           // only a hostile attack authors the target's next impact (a heal — an ally aiming at an ally — never does)
           const tgt = this.units.get(e[2]);
-          if (tgt && tgt.side !== src.side) this.lastAttacker.set(e[2], { def: src.def, at: now });
+          if (tgt && tgt.side !== src.side) this.lastAttacker.set(e[2], { def: src.def, at: now, skillIndex: src.skillIndex ?? null, skillActive: !!src.skillActive });
           if (!this.unit(src.def, 'attack', e[1], src.skillIndex ?? undefined, src.skillActive) && src.side === 'enemy') this.battle('enemyHit', { unitKey: `${e[1]}:atk`, volume: 0.35 });
         } else if (kind === 'dmg') {
           const by = this.lastAttacker.get(e[1]);
           if (!by || !IMPACT_TYPES.has(e[3])) continue;
           this.lastAttacker.delete(e[1]); // one impact per attack
-          if (now - by.at <= IMPACT_WINDOW_MS) this.unit(by.def, 'hit', `h${e[1]}`);
+          if (now - by.at <= IMPACT_WINDOW_MS) this.unit(by.def, 'hit', `h${e[1]}`, by.skillIndex ?? undefined, by.skillActive);
         } else if (kind === 'heal') {
           this.battle('heal', { unitKey: `heal:${e[1]}`, volume: 0.35 });
-        } else if (kind === 'skill') {
+        } else if (kind === 'skill' && e[2]) {
           const u = this.units.get(e[1]);
           if (u) {
             // the running skill's own swing / impact (`attacks` / `hits`, header) follow this flag
